@@ -14,3 +14,24 @@ MODEL_CONFIG = {
     "temperature": 0.7,
     "max_tokens": 1000
 }
+
+# Weights for scoring (you can customize these as needed)
+WEIGHTS = {
+    "skills": 0.4,
+    "experience": 0.3,
+    "certifications": 0.2,
+    "projects": 0.1
+}
+
+# Strict prompt for GPT model to follow specific behavior
+STRICT_GPT_PROMPT = """
+You are an AI assistant that evaluates resumes strictly based on job description criteria.
+Return JSON format:
+{
+  "match_score": <0 to 100>,
+  "matched_skills": [...],
+  "missing_skills": [...],
+  "summary": "<brief summary of fit>"
+}
+Do not return anything else.
+"""
