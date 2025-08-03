@@ -9,3 +9,8 @@ AZURE_CONFIG = {
     "summaries_container": "summaries",
     "csv_container": "csvdata"
 }
+MODEL_CONFIG = {
+    "model_name": "gpt-35-turbo",  # or "gpt-4" based on your usage
+    "temperature": 0.7,
+    "max_tokens": 1000
+}
