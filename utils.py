@@ -1,5 +1,3 @@
-# utils.py — Resume Parsing, Embeddings, Contact Extraction, Azure Uploads
-
 import re
 import fitz  # PyMuPDF
 import numpy as np
@@ -21,7 +19,8 @@ def parse_resume(file_bytes):
             for page in doc:
                 text += page.get_text()
         return text.strip()
-    except:
+    except Exception as e:
+        print(f"❌ Error parsing resume: {e}")
         return "Error reading resume"
 
 # ==========================
@@ -64,19 +63,21 @@ def get_embedding(text):
             model=MODEL_CONFIG["embedding_model"]
         )
         return response.data[0].embedding
-    except:
+    except Exception as e:
+        print(f"❌ Error generating embedding: {e}")
         return [0.0] * 1536  # fallback vector
 
 @functools.lru_cache(maxsize=10)
 def get_embedding_cached(text):
-    return tuple(get_embedding(text))  # lru_cache requires hashable input
+    return tuple(get_embedding(text))
 
 def get_cosine_similarity(vec1, vec2):
     try:
         if not vec1 or not vec2 or len(vec1) != len(vec2):
             return 0.0
         return cosine_similarity([vec1], [vec2])[0][0]
-    except:
+    except Exception as e:
+        print(f"❌ Error in cosine similarity: {e}")
         return 0.0
 
 # ==========================
@@ -90,7 +91,6 @@ def extract_contact_info(text):
     email = email_match.group(0) if email_match else "N/A"
     phone = phone_match.group(0).replace(" ", "").replace("-", "") if phone_match else "N/A"
 
-    # Try name from first 10 lines (fallback if GPT fails)
     lines = text.splitlines()
     for line in lines[:10]:
         line_clean = line.strip()
@@ -100,7 +100,6 @@ def extract_contact_info(text):
             name = re.sub(r"(name|cv|resume|curriculum vitae)[:\-]?", "", line_clean, flags=re.I).strip()
             break
 
-    # If still not found, fallback to first non-empty capitalized line
     if name == "N/A":
         for line in lines[:10]:
             if line.strip() and line.strip()[0].isupper() and len(line.strip().split()) <= 5:
@@ -114,9 +113,8 @@ def extract_contact_info(text):
     }
 
 # ==========================
-# ☁️ Azure Uploads (Resumes, PDFs, CSVs)
+# ☁️ Azure Uploads
 # ==========================
-# Load connection string securely from env (in GitHub secrets or .env)
 connection_string = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
 blob_service_client = BlobServiceClient.from_connection_string(connection_string)
 
