@@ -1,6 +1,3 @@
-# ✅ Combined app.py: Merged features from app.py and app (2).py
-# This file includes full Streamlit UI, resume analysis, emailing, scheduling, analytics
-
 from dotenv import load_dotenv
 load_dotenv()
 import streamlit as st
@@ -10,7 +7,6 @@ import asyncio
 from datetime import datetime, timedelta
 import uuid
 
-# Optional (used in app (2).py)
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -34,6 +30,13 @@ from pdf_utils import generate_summary_pdf
 from email_generator import send_email, check_missing_info, send_missing_info_email, schedule_interview
 
 SCOPES = ['https://www.googleapis.com/auth/calendar.events']
+
+# Try importing display_section
+try:
+    from display_section import show_candidate_tabs
+    USE_TABS = True
+except ImportError:
+    USE_TABS = False
 
 # Session state init
 if "candidate_df" not in st.session_state:
@@ -144,5 +147,15 @@ if jd and uploaded_files and analyze and not st.session_state["analysis_done"]:
 
 # ========== Display & Actions ==========
 if st.session_state["candidate_df"] is not None:
-    from display_section import show_candidate_tabs  # modularize tab UI
-    show_candidate_tabs(st.session_state["candidate_df"], score_thresh, jd_thresh, skill_thresh, domain_thresh, exp_thresh)
+    if USE_TABS:
+        show_candidate_tabs(
+            st.session_state["candidate_df"],
+            score_thresh,
+            jd_thresh,
+            skill_thresh,
+            domain_thresh,
+            exp_thresh
+        )
+    else:
+        st.warning("📂 Candidate tab UI module not found — showing table instead.")
+        st.dataframe(st.session_state["candidate_df"])
