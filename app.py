@@ -143,12 +143,9 @@ if jd and analyze and not st.session_state["analysis_done"]:
         df["verdict"] = df.apply(verdict_logic, axis=1)
 
         if top_n > 0:
-            sorted_df = df.sort_values("score", ascending=False)
-            top = sorted_df.head(top_n).copy()
-            top["verdict"] = "shortlist"
-            rest = sorted_df.iloc[top_n:].copy()
-            rest["verdict"] = rest["verdict"].apply(lambda v: v if v == "reject" else "review")
-            df = pd.concat([top, rest], ignore_index=True)
+            df = df.sort_values("score", ascending=False).head(top_n).copy()
+            df["verdict"] = "shortlist"
+
 
         st.session_state["candidate_df"] = df
         st.session_state["analysis_done"] = True
