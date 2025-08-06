@@ -4,7 +4,6 @@ import streamlit as st
 import pandas as pd
 import asyncio
 import os
-from datetime import datetime
 from azure.storage.blob import BlobServiceClient
 
 from constants import AZURE_CONFIG
@@ -22,14 +21,12 @@ from email_generator import schedule_interview
 # Google OAuth (optional)
 SCOPES = ['https://www.googleapis.com/auth/calendar.events']
 
-# Try importing display_section
 try:
     from display_section import show_candidate_tabs
     USE_TABS = True
 except ImportError:
     USE_TABS = False
 
-# Session state init
 if "candidate_df" not in st.session_state:
     st.session_state["candidate_df"] = None
 if "analysis_done" not in st.session_state:
@@ -39,7 +36,7 @@ st.set_page_config(layout="wide", page_title="AI Resume Screener")
 st.markdown("<h1 style='text-align:center;'>🤖 AI Resume Screener</h1>", unsafe_allow_html=True)
 st.markdown("---")
 
-# ========== Sidebar Inputs ==========
+# ========== Sidebar ==========
 with st.sidebar:
     jd = st.text_area("📄 Paste Job Description", height=200)
     role = extract_role_from_jd(jd) if jd else "N/A"
@@ -60,8 +57,7 @@ with st.sidebar:
 
     analyze = st.button("🚀 Analyze from Azure Storage")
 
-# ========== Processing ==========
-
+# ========== Azure Blob Loader ==========
 def load_resumes_from_blob():
     connection_str = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
     container = AZURE_CONFIG["resumes_container"]
@@ -71,13 +67,13 @@ def load_resumes_from_blob():
 
     resumes = []
     for blob in blobs:
-        if not blob.name.lower().endswith(".pdf"):
-            continue
-        blob_client = container_client.get_blob_client(blob.name)
-        content = blob_client.download_blob().readall()
-        resumes.append((blob.name, content))
+        if blob.name.lower().endswith(".pdf"):
+            blob_client = container_client.get_blob_client(blob.name)
+            content = blob_client.download_blob().readall()
+            resumes.append((blob.name, content))
     return resumes
 
+# ========== Resume Analysis ==========
 if jd and analyze and not st.session_state["analysis_done"]:
     resumes_from_blob = load_resumes_from_blob()
     total = len(resumes_from_blob)
@@ -87,11 +83,10 @@ if jd and analyze and not st.session_state["analysis_done"]:
     else:
         progress = st.progress(0, text="Analyzing resumes...")
         jd_embedding = get_embedding_cached(jd)
-        results = []
 
         async def process_all():
             tasks = []
-            for idx, (file_name, file_bytes) in enumerate(resumes_from_blob):
+            for file_name, file_bytes in resumes_from_blob:
                 resume_text = parse_resume(file_bytes)
                 contact = extract_contact_info(resume_text)
                 chunks = get_text_chunks(resume_text)
@@ -114,43 +109,50 @@ if jd and analyze and not st.session_state["analysis_done"]:
 
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        for i in range(len(resumes_from_blob)):
-            progress.progress(i / total, text=f"Processing {i+1} of {total}...")
         results = loop.run_until_complete(process_all())
         loop.close()
 
-        for r in results:
-            r["recruiter_notes"] = ""
-            if r["score"] < score_thresh and r["verdict"] != "reject":
-                r["verdict"] = "reject"
-                r.setdefault("reasons_if_rejected", []).append(f"Score below threshold {r['score']} < {score_thresh}")
-
-        st.success("✅ Resumes processed from Azure!")
         df = pd.DataFrame(results).fillna("N/A")
 
+        # Apply thresholds and update verdicts
         def verdict_logic(row):
             if row["verdict"] == "reject":
                 return "reject"
-            elif (
-                row["jd_similarity"] < jd_thresh or
-                row["skills_match"] < skill_thresh or
-                row["domain_match"] < domain_thresh or
-                row["experience_match"] < exp_thresh
+            if (
+                row.get("jd_similarity", 0) < jd_thresh or
+                row.get("skills_match", 0) < skill_thresh or
+                row.get("domain_match", 0) < domain_thresh or
+                row.get("experience_match", 0) < exp_thresh
             ):
                 return "review"
             return "shortlist"
 
         df["verdict"] = df.apply(verdict_logic, axis=1)
 
+        # Apply score threshold
+        for i, r in df.iterrows():
+            if r.get("score", 0) < score_thresh and df.at[i, "verdict"] != "reject":
+                df.at[i, "verdict"] = "reject"
+                reasons = r.get("reasons_if_rejected", [])
+                if isinstance(reasons, str):
+                    reasons = [reasons]
+                reasons.append(f"Score below threshold {r['score']} < {score_thresh}")
+                df.at[i, "reasons_if_rejected"] = reasons
+
+        # Top-N filter
         if top_n > 0:
-            df = df.sort_values("score", ascending=False).head(top_n).copy()
-            df["verdict"] = "shortlist"
+            df = df.sort_values("score", ascending=False)
+            top_df = df.head(top_n).copy()
+            top_df["verdict"] = "shortlist"
+            rest = df.iloc[top_n:].copy()
+            rest["verdict"] = rest["verdict"].apply(lambda v: v if v == "reject" else "review")
+            df = pd.concat([top_df, rest], ignore_index=True)
 
-
+        st.success("✅ Resumes processed from Azure!")
         st.session_state["candidate_df"] = df
         st.session_state["analysis_done"] = True
 
-# ========== Display ==========
+# ========== Display Results ==========
 if st.session_state["candidate_df"] is not None:
     if USE_TABS:
         show_candidate_tabs(
