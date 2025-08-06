@@ -142,15 +142,17 @@ if jd and analyze and not st.session_state["analysis_done"]:
 
         df["verdict"] = df.apply(verdict_logic, axis=1)
 
-        # Always sort by score descending before filtering
-        df = df.sort_values("score", ascending=False).copy()
-        
-        # Apply Top-N AFTER sorting and before storing
-        if top_n > 0:
-            df = df.iloc[:top_n].copy()
-        
-        # Ensure verdicts are consistent after filtering
+        # Apply verdict logic first (on full set)
         df["verdict"] = df.apply(verdict_logic, axis=1)
+        
+        # Sort by score descending
+        df = df.sort_values("score", ascending=False).reset_index(drop=True).copy()
+        
+        # Apply Top-N AFTER sorting
+        if top_n > 0:
+            df = df.head(top_n).copy()
+            df["verdict"] = "shortlist"  # Override verdicts to 'shortlist' for Top-N
+
 
 
 
