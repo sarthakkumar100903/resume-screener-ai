@@ -87,8 +87,8 @@ RESUME:
 def parse_gpt_response(raw_json, contact, role, jd_similarity, resume_text, resume_file):
     try:
         parsed = json.loads(raw_json)
-    except:
-        return failed_json(contact, role, jd_similarity, resume_text, resume_file, reason="❌ GPT parsing failed")
+    except json.JSONDecodeError:
+        return failed_json(contact, role, jd_similarity, resume_text, resume_file, reason="❌ GPT response not valid JSON")
 
     def get(k, fallback):
         return parsed.get(k, fallback)
