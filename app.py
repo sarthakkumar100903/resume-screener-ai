@@ -140,8 +140,6 @@ if jd and analyze and not st.session_state["analysis_done"]:
                 return "review"
             return "shortlist"
 
-        df["verdict"] = df.apply(verdict_logic, axis=1)
-
         # Apply verdict logic first (on full set)
         df["verdict"] = df.apply(verdict_logic, axis=1)
         
