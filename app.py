@@ -140,23 +140,35 @@ if jd and analyze and not st.session_state["analysis_done"]:
                 return "review"
             return "shortlist"
 
-        # Apply verdict logic first (on full set)
+        df = pd.DataFrame(results).fillna("N/A")
+        
+        # Step 1: Apply verdicts
+        def verdict_logic(row):
+            if row["verdict"] == "reject":
+                return "reject"
+            elif (
+                row["jd_similarity"] < jd_thresh or
+                row["skills_match"] < skill_thresh or
+                row["domain_match"] < domain_thresh or
+                row["experience_match"] < exp_thresh
+            ):
+                return "review"
+            return "shortlist"
+        
         df["verdict"] = df.apply(verdict_logic, axis=1)
         
-        # Sort by score descending
-        df = df.sort_values("score", ascending=False).reset_index(drop=True).copy()
+        # Step 2: Always sort by score descending
+        df = df.sort_values("score", ascending=False).copy()
         
-        # Apply Top-N AFTER sorting
+        # Step 3: Apply Top-N after sorting
         if top_n > 0:
             df = df.head(top_n).copy()
-            df["verdict"] = "shortlist"  # Override verdicts to 'shortlist' for Top-N
-
-
-
-
-
+            df["verdict"] = "shortlist"  # Optional: force verdict if needed
+        
+        # Step 4: Store to session state
         st.session_state["candidate_df"] = df
         st.session_state["analysis_done"] = True
+
 
 # ========== Display ==========
 if st.session_state["candidate_df"] is not None:
