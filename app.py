@@ -142,9 +142,13 @@ if jd and analyze and not st.session_state["analysis_done"]:
 
         df["verdict"] = df.apply(verdict_logic, axis=1)
 
+        # Always sort by score descending
+        df = df.sort_values("score", ascending=False).copy()
+
         if top_n > 0:
-            df = df.sort_values("score", ascending=False).head(top_n).copy()
+            df = df.head(top_n)
             df["verdict"] = "shortlist"
+
 
 
         st.session_state["candidate_df"] = df
