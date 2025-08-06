@@ -2,17 +2,10 @@ from dotenv import load_dotenv
 load_dotenv()
 import streamlit as st
 import pandas as pd
-import base64
 import asyncio
-from datetime import datetime, timedelta
-import uuid
-
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
-from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
-from googleapiclient.discovery import build
+import os
+from datetime import datetime
+from azure.storage.blob import BlobServiceClient
 
 from constants import AZURE_CONFIG
 from utils import (
@@ -20,15 +13,13 @@ from utils import (
     get_text_chunks,
     get_embedding_cached,
     get_cosine_similarity,
-    upload_to_blob,
     extract_contact_info,
-    save_summary_to_blob,
-    save_csv_to_blob
+    upload_to_blob
 )
 from backend import get_resume_analysis_async, extract_role_from_jd
-from pdf_utils import generate_summary_pdf
-from email_generator import send_email, check_missing_info, send_missing_info_email, schedule_interview
+from email_generator import schedule_interview
 
+# Google OAuth (optional)
 SCOPES = ['https://www.googleapis.com/auth/calendar.events']
 
 # Try importing display_section
@@ -67,85 +58,102 @@ with st.sidebar:
     score_thresh = st.slider("Final Score Threshold", 0, 100, 50)
     top_n = st.number_input("🎯 Top-N Candidates", 0, value=0)
 
-    uploaded_files = st.file_uploader("📤 Upload Resumes (PDF)", type=["pdf"], accept_multiple_files=True)
-    analyze = st.button("🚀 Analyze")
+    analyze = st.button("🚀 Analyze from Azure Storage")
 
 # ========== Processing ==========
-if jd and uploaded_files and analyze and not st.session_state["analysis_done"]:
-    progress = st.progress(0, text="Starting Analysis...")
-    total = len(uploaded_files)
-    jd_embedding = get_embedding_cached(jd)
-    results = []
 
-    async def process_all():
-        tasks = []
-        for idx, file in enumerate(uploaded_files):
-            file_bytes = file.read()
-            file_name = file.name.replace(".pdf", "")
-            upload_to_blob(file_bytes, file_name + ".pdf", AZURE_CONFIG["resumes_container"])
+def load_resumes_from_blob():
+    connection_str = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
+    container = AZURE_CONFIG["resumes_container"]
+    blob_service_client = BlobServiceClient.from_connection_string(connection_str)
+    container_client = blob_service_client.get_container_client(container)
+    blobs = container_client.list_blobs()
 
-            resume_text = parse_resume(file_bytes)
-            contact = extract_contact_info(resume_text)
-            chunks = get_text_chunks(resume_text)
-            resume_embedding = get_embedding_cached(" ".join(chunks))
-            jd_sim = round(get_cosine_similarity(resume_embedding, jd_embedding) * 100, 2)
+    resumes = []
+    for blob in blobs:
+        if not blob.name.lower().endswith(".pdf"):
+            continue
+        blob_client = container_client.get_blob_client(blob.name)
+        content = blob_client.download_blob().readall()
+        resumes.append((blob.name, content))
+    return resumes
 
-            task = get_resume_analysis_async(
-                jd=jd,
-                resume_text=resume_text,
-                contact=contact,
-                role=role,
-                domain=domain,
-                skills=skills,
-                experience_range=exp_range,
-                jd_similarity=jd_sim,
-                resume_file=file_name
-            )
-            tasks.append(task)
-        return await asyncio.gather(*tasks)
+if jd and analyze and not st.session_state["analysis_done"]:
+    resumes_from_blob = load_resumes_from_blob()
+    total = len(resumes_from_blob)
 
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    for i in range(len(uploaded_files)):
-        progress.progress(i / total, text=f"Processing {i+1} of {total}...")
-    results = loop.run_until_complete(process_all())
-    loop.close()
+    if total == 0:
+        st.warning("No valid PDF resumes found in Azure Blob.")
+    else:
+        progress = st.progress(0, text="Analyzing resumes...")
+        jd_embedding = get_embedding_cached(jd)
+        results = []
 
-    for r in results:
-        r["recruiter_notes"] = ""
-        if r["score"] < score_thresh and r["verdict"] != "reject":
-            r["verdict"] = "reject"
-            r.setdefault("reasons_if_rejected", []).append(f"Score below threshold {r['score']} < {score_thresh}")
+        async def process_all():
+            tasks = []
+            for idx, (file_name, file_bytes) in enumerate(resumes_from_blob):
+                resume_text = parse_resume(file_bytes)
+                contact = extract_contact_info(resume_text)
+                chunks = get_text_chunks(resume_text)
+                resume_embedding = get_embedding_cached(" ".join(chunks))
+                jd_sim = round(get_cosine_similarity(resume_embedding, jd_embedding) * 100, 2)
 
-    st.success("✅ All resumes processed!")
-    df = pd.DataFrame(results).fillna("N/A")
+                task = get_resume_analysis_async(
+                    jd=jd,
+                    resume_text=resume_text,
+                    contact=contact,
+                    role=role,
+                    domain=domain,
+                    skills=skills,
+                    experience_range=exp_range,
+                    jd_similarity=jd_sim,
+                    resume_file=file_name
+                )
+                tasks.append(task)
+            return await asyncio.gather(*tasks)
 
-    def verdict_logic(row):
-        if row["verdict"] == "reject":
-            return "reject"
-        elif (
-            row["jd_similarity"] < jd_thresh or
-            row["skills_match"] < skill_thresh or
-            row["domain_match"] < domain_thresh or
-            row["experience_match"] < exp_thresh
-        ):
-            return "review"
-        return "shortlist"
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        for i in range(len(resumes_from_blob)):
+            progress.progress(i / total, text=f"Processing {i+1} of {total}...")
+        results = loop.run_until_complete(process_all())
+        loop.close()
 
-    df["verdict"] = df.apply(verdict_logic, axis=1)
+        for r in results:
+            r["recruiter_notes"] = ""
+            if r["score"] < score_thresh and r["verdict"] != "reject":
+                r["verdict"] = "reject"
+                r.setdefault("reasons_if_rejected", []).append(f"Score below threshold {r['score']} < {score_thresh}")
 
-    if top_n > 0:
-        sorted_df = df.sort_values("score", ascending=False)
-        top = sorted_df.head(top_n).copy()
-        top["verdict"] = "shortlist"
-        rest = sorted_df.iloc[top_n:].copy()
-        rest["verdict"] = rest["verdict"].apply(lambda v: v if v == "reject" else "review")
-        df = pd.concat([top, rest], ignore_index=True)
+        st.success("✅ Resumes processed from Azure!")
+        df = pd.DataFrame(results).fillna("N/A")
 
-    st.session_state["candidate_df"] = df
-    st.session_state["analysis_done"] = True
+        def verdict_logic(row):
+            if row["verdict"] == "reject":
+                return "reject"
+            elif (
+                row["jd_similarity"] < jd_thresh or
+                row["skills_match"] < skill_thresh or
+                row["domain_match"] < domain_thresh or
+                row["experience_match"] < exp_thresh
+            ):
+                return "review"
+            return "shortlist"
 
-# ========== Display & Actions ==========
+        df["verdict"] = df.apply(verdict_logic, axis=1)
+
+        if top_n > 0:
+            sorted_df = df.sort_values("score", ascending=False)
+            top = sorted_df.head(top_n).copy()
+            top["verdict"] = "shortlist"
+            rest = sorted_df.iloc[top_n:].copy()
+            rest["verdict"] = rest["verdict"].apply(lambda v: v if v == "reject" else "review")
+            df = pd.concat([top, rest], ignore_index=True)
+
+        st.session_state["candidate_df"] = df
+        st.session_state["analysis_done"] = True
+
+# ========== Display ==========
 if st.session_state["candidate_df"] is not None:
     if USE_TABS:
         show_candidate_tabs(
@@ -157,5 +165,4 @@ if st.session_state["candidate_df"] is not None:
             exp_thresh
         )
     else:
-        st.warning("📂 Candidate tab UI module not found — showing table instead.")
         st.dataframe(st.session_state["candidate_df"])
