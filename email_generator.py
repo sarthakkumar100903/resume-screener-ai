@@ -5,10 +5,9 @@ from email.mime.multipart import MIMEMultipart
 from dotenv import load_dotenv
 import pandas as pd
 
-# Load environment variables from .env file
+# Load environment variables
 load_dotenv()
 
-# Email config
 FROM_EMAIL = os.getenv("EMAIL")
 EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
 SMTP_SERVER = "smtp.gmail.com"
@@ -49,7 +48,6 @@ def check_missing_info(row):
 def send_missing_info_email(to_email, name, missing_fields):
     subject = "Additional Information Required for Application"
     missing_str = ", ".join(missing_fields).title()
-
     body = f"""
     Dear {name or 'Candidate'},
 
@@ -61,7 +59,6 @@ def send_missing_info_email(to_email, name, missing_fields):
     Best regards,
     Recruitment Team
     """
-
     return send_email(to_email, subject, body)
 
 def send_rejection_email(to_email, name):
@@ -78,7 +75,6 @@ def send_rejection_email(to_email, name):
     Best regards,
     Recruitment Team
     """
-
     return send_email(to_email, subject, body)
 
 def send_selection_email(to_email, name):
@@ -93,5 +89,22 @@ def send_selection_email(to_email, name):
     Best regards,
     Recruitment Team
     """
-
     return send_email(to_email, subject, body)
+
+# ✅ Helper function to send appropriate email based on verdict
+def send_email_to_candidate(row):
+    email = row.get("email", "")
+    name = row.get("name", "")
+    verdict = row.get("verdict", "").lower()
+
+    if not email:
+        print("❌ No email found for candidate.")
+        return
+
+    missing_fields = check_missing_info(row)
+    if missing_fields:
+        send_missing_info_email(email, name, missing_fields)
+    elif verdict == "selected":
+        send_selection_email(email, name)
+    elif verdict == "rejected":
+        send_rejection_email(email, name)
