@@ -1,34 +1,39 @@
+import os
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from dotenv import load_dotenv
 import pandas as pd
-from google.oauth2 import service_account
-from googleapiclient.discovery import build
-import datetime
+
+# Load environment variables from .env file
+load_dotenv()
+
+# Email config
+FROM_EMAIL = os.getenv("EMAIL")
+EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
+SMTP_SERVER = "smtp.gmail.com"
+SMTP_PORT = 465
 
 def send_email(to_email, subject, body):
-    from_email = "prishabadwaik812@gmail.com"
-    password = "yljkxbxtfkdjboli"  # App password, NOT your Gmail password
-
     message = MIMEMultipart()
-    message["From"] = from_email
+    message["From"] = FROM_EMAIL
     message["To"] = to_email
-                            #to_email= row['email']
     message["Subject"] = subject
     message.attach(MIMEText(body, "plain"))
 
     try:
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-            server.login(from_email, password)
-            server.sendmail(from_email, to_email, message.as_string())
+        with smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT) as server:
+            server.login(FROM_EMAIL, EMAIL_PASSWORD)
+            server.sendmail(FROM_EMAIL, to_email, message.as_string())
+        print(f"✅ Email sent to {to_email} with subject: {subject}")
         return True
     except Exception as e:
-        print("Failed to send email: ", e)
+        print(f"❌ Failed to send email to {to_email}: {e}")
         return False
-                        
+
 def check_missing_info(row):
     missing_fields = []
-    # Treat empty strings or 'N/A' (case-insensitive) as missing
+
     def is_missing(value):
         return pd.isna(value) or str(value).strip().lower() in ["", "n/a"]
 
@@ -36,131 +41,57 @@ def check_missing_info(row):
         missing_fields.append("name")
     if is_missing(row.get("email", "")):
         missing_fields.append("email")
-    
-    # If you want phone number excluded for now, keep it commented
     if is_missing(row.get("phone", "")):
-         missing_fields.append("phone number")
+        missing_fields.append("phone number")
 
     return missing_fields
 
-    
 def send_missing_info_email(to_email, name, missing_fields):
-    sender_email = "prishabadwaik812@gmail.com"
-    sender_password = "yljkxbxtfkdjboli"  # Use Gmail App Password
     subject = "Additional Information Required for Application"
-    
     missing_str = ", ".join(missing_fields).title()
+
     body = f"""
     Dear {name or 'Candidate'},
 
     Thank you for submitting your resume for the position.
 
     However, we noticed that the following information is missing from your application: {missing_str}.
-
     Kindly reply to this email with the missing details so we can continue processing your application.
 
-    Best regards,  
+    Best regards,
     Recruitment Team
     """
 
-    message = f"Subject: {subject}\n\n{body}"
+    return send_email(to_email, subject, body)
 
-    try:
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-            server.login(sender_email, sender_password)
-            server.sendmail(sender_email, to_email, message)
-            print(f"✅ Missing info email sent to {to_email}")
-    except Exception as e:
-        print(f"❌ Failed to send missing info email to {to_email}: {e}")
+def send_rejection_email(to_email, name):
+    subject = "Update on Your Job Application"
+    body = f"""
+    Dear {name or 'Candidate'},
 
-# def schedule_interview(name, email, date_time, duration_minutes=30):
-#     SCOPES = ['https://www.googleapis.com/auth/calendar']
-#     SERVICE_ACCOUNT_FILE = 'credentials.json'
+    Thank you for your interest in the position and for taking the time to apply.
 
-#     credentials = service_account.Credentials.from_service_account_file(
-#         SERVICE_ACCOUNT_FILE, scopes=SCOPES)
+    After careful consideration, we regret to inform you that we will not be moving forward with your application at this time.
 
-#     service = build('calendar', 'v3', credentials=credentials)
+    We wish you all the best in your job search and future endeavors.
 
-#     start = date_time.isoformat()
-#     end = (date_time + datetime.timedelta(minutes=duration_minutes)).isoformat()
+    Best regards,
+    Recruitment Team
+    """
 
-#     event = {
-#         'summary': f'Interview with {name}',
-#         'description': f'Interview with {name} for the open position.',
-#         'start': {'dateTime': start, 'timeZone': 'Asia/Kolkata'},
-#         'end': {'dateTime': end, 'timeZone': 'Asia/Kolkata'},
-#         'attendees': [{'email': email}],
-#         'conferenceData': {
-#             'createRequest': {
-#                 'requestId': f"{name}-{email}".replace(" ", "_"),
-#                 'conferenceSolutionKey': {'type': 'hangoutsMeet'}
-#             }
-#         }
-#     }
+    return send_email(to_email, subject, body)
 
-#     created_event = service.events().insert(
-#         calendarId='primary',
-#         body=event,
-#         conferenceDataVersion=1,
-#         sendUpdates='all'
-#     ).execute()
+def send_selection_email(to_email, name):
+    subject = "Congratulations! You've Been Selected"
+    body = f"""
+    Dear {name or 'Candidate'},
 
-#     return created_event.get('hangoutLink')
-# email_generator.py
+    We are pleased to inform you that you have been selected for the next stage of our hiring process.
 
-from google.oauth2 import service_account
-from googleapiclient.discovery import build
-import datetime
+    Our team will be in touch shortly with the next steps. Congratulations once again!
 
-SCOPES = ['https://www.googleapis.com/auth/calendar']
-SERVICE_ACCOUNT_FILE = 'credentials.json'  # Ensure this file exists
+    Best regards,
+    Recruitment Team
+    """
 
-def schedule_interview(email, name, date_str, time_str):
-    try:
-        print(f"Scheduling interview for {name} ({email}) at {date_str} {time_str}")
-
-        # Convert date and time strings into RFC3339 datetime strings
-        interview_date = datetime.datetime.strptime(date_str, "%Y/%m/%d")
-        interview_time = datetime.datetime.strptime(time_str, "%H:%M").time()
-        interview_start = datetime.datetime.combine(interview_date, interview_time)
-        interview_end = interview_start + datetime.timedelta(minutes=30)
-
-        credentials = service_account.Credentials.from_service_account_file(
-            SERVICE_ACCOUNT_FILE, scopes=SCOPES)
-        service = build("calendar", "v3", credentials=credentials)
-
-        event = {
-            'summary': f'Interview with {name}',
-            'location': 'Online',
-            'description': f'Interview for {name}. Email: {email}',
-            'start': {
-                'dateTime': interview_start.isoformat(),
-                'timeZone': 'Asia/Kolkata',
-            },
-            'end': {
-                'dateTime': interview_end.isoformat(),
-                'timeZone': 'Asia/Kolkata',
-            },
-            'attendees': [{'email': email}],
-            'conferenceData': {
-                'createRequest': {
-                    'requestId': f"{email}-{int(datetime.datetime.now().timestamp())}",
-                    'conferenceSolutionKey': {'type': 'hangoutsMeet'}
-                }
-            },
-        }
-
-        created_event = service.events().insert(
-            calendarId='primary',
-            body=event,
-            conferenceDataVersion=1
-        ).execute()
-
-        meet_link = created_event.get('hangoutLink') or created_event.get('htmlLink')
-        print("✅ Event created:", meet_link)
-        return meet_link
-
-    except Exception as e:
-        print("❌ Failed to schedule interview:", e)
-        raise
+    return send_email(to_email, subject, body)
