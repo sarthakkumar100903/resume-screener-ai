@@ -16,7 +16,7 @@ from utils import (
     extract_contact_info
 )
 from backend import get_resume_analysis_async, extract_role_from_jd
-# from email_generator import schedule_interview
+from email_generator import send_email_to_candidate  # ✅ Use only this function
 
 # Optional tabbed UI
 try:
@@ -140,9 +140,9 @@ if jd and analyze and not st.session_state["analysis_done"]:
         # Assign verdicts
         df["verdict"] = df.apply(verdict_logic, axis=1)
 
-        # Schedule/send emails based on verdict
+        # ✅ Send emails for each candidate
         for _, row in df.iterrows():
-            schedule_interview(
+            send_email_to_candidate(
                 name=row.get("name"),
                 email=row.get("email"),
                 verdict=row.get("verdict"),
