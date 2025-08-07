@@ -5,14 +5,18 @@ from email.mime.multipart import MIMEMultipart
 from dotenv import load_dotenv
 import pandas as pd
 
-# Load environment variables
+# Load environment variables from .env file
 load_dotenv()
 
+# Credentials from environment
 FROM_EMAIL = os.getenv("EMAIL")
 EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
+
+# Gmail SMTP server details
 SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 465
 
+# ---------- Email Sending Logic ----------
 def send_email(to_email, subject, body):
     message = MIMEMultipart()
     message["From"] = FROM_EMAIL
@@ -30,6 +34,7 @@ def send_email(to_email, subject, body):
         print(f"❌ Failed to send email to {to_email}: {e}")
         return False
 
+# ---------- Missing Info Checker ----------
 def check_missing_info(row):
     missing_fields = []
 
@@ -45,53 +50,54 @@ def check_missing_info(row):
 
     return missing_fields
 
+# ---------- Email Templates ----------
 def send_missing_info_email(to_email, name, missing_fields):
     subject = "Additional Information Required for Application"
     missing_str = ", ".join(missing_fields).title()
     body = f"""
-    Dear {name or 'Candidate'},
+Dear {name or 'Candidate'},
 
-    Thank you for submitting your resume for the position.
+Thank you for submitting your resume for the position.
 
-    However, we noticed that the following information is missing from your application: {missing_str}.
-    Kindly reply to this email with the missing details so we can continue processing your application.
+However, we noticed that the following information is missing from your application: {missing_str}.
+Kindly reply to this email with the missing details so we can continue processing your application.
 
-    Best regards,
-    Recruitment Team
-    """
+Best regards,  
+Recruitment Team
+"""
     return send_email(to_email, subject, body)
 
 def send_rejection_email(to_email, name):
     subject = "Update on Your Job Application"
     body = f"""
-    Dear {name or 'Candidate'},
+Dear {name or 'Candidate'},
 
-    Thank you for your interest in the position and for taking the time to apply.
+Thank you for your interest in the position and for taking the time to apply.
 
-    After careful consideration, we regret to inform you that we will not be moving forward with your application at this time.
+After careful consideration, we regret to inform you that we will not be moving forward with your application at this time.
 
-    We wish you all the best in your job search and future endeavors.
+We wish you all the best in your job search and future endeavors.
 
-    Best regards,
-    Recruitment Team
-    """
+Best regards,  
+Recruitment Team
+"""
     return send_email(to_email, subject, body)
 
 def send_selection_email(to_email, name):
     subject = "Congratulations! You've Been Selected"
     body = f"""
-    Dear {name or 'Candidate'},
+Dear {name or 'Candidate'},
 
-    We are pleased to inform you that you have been selected for the next stage of our hiring process.
+We are pleased to inform you that you have been selected for the next stage of our hiring process.
 
-    Our team will be in touch shortly with the next steps. Congratulations once again!
+Our team will be in touch shortly with the next steps. Congratulations once again!
 
-    Best regards,
-    Recruitment Team
-    """
+Best regards,  
+Recruitment Team
+"""
     return send_email(to_email, subject, body)
 
-# ✅ Helper function to send appropriate email based on verdict
+# ---------- Dispatcher: Decides Which Email to Send ----------
 def send_email_to_candidate(row):
     email = row.get("email", "")
     name = row.get("name", "")
