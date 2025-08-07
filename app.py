@@ -1,72 +1,185 @@
+from dotenv import load_dotenv
+load_dotenv()
 import streamlit as st
-import os
 import pandas as pd
-from backend import analyze_resumes_from_blob
-from email_generator import send_email_to_candidate
+import asyncio
+import os
+from datetime import datetime
+from azure.storage.blob import BlobServiceClient
 
-# Threshold sliders
-st.sidebar.title("Resume Filter Criteria")
-jd_thresh = st.sidebar.slider("JD Match Score Threshold", 0, 100, 50)
-skills_thresh = st.sidebar.slider("Skills Match Threshold", 0, 100, 50)
-domain_thresh = st.sidebar.slider("Domain Match Threshold", 0, 100, 50)
-exp_thresh = st.sidebar.slider("Experience Match Threshold", 0, 100, 50)
-top_n = st.sidebar.number_input("Top N candidates to shortlist", min_value=1, value=5)
+from constants import AZURE_CONFIG
+from utils import (
+    parse_resume,
+    get_text_chunks,
+    get_embedding_cached,
+    get_cosine_similarity,
+    extract_contact_info,
+    upload_to_blob
+)
+from backend import get_resume_analysis_async, extract_role_from_jd
+from email_generator import schedule_interview
 
-st.title("AI Resume Screener")
+# Google OAuth (optional)
+SCOPES = ['https://www.googleapis.com/auth/calendar.events']
 
-# Analyze resumes from Azure Blob
-df = analyze_resumes_from_blob()
+# Try importing display_section
+try:
+    from display_section import show_candidate_tabs
+    USE_TABS = True
+except ImportError:
+    USE_TABS = False
 
-if df.empty:
-    st.warning("⚠️ No resumes found in storage or analysis failed.")
-else:
-    st.success("✅ Resumes analyzed successfully!")
+# Session state init
+if "candidate_df" not in st.session_state:
+    st.session_state["candidate_df"] = None
+if "analysis_done" not in st.session_state:
+    st.session_state["analysis_done"] = False
 
-    # Show available columns (debugging aid)
-    st.write("📊 Columns in DataFrame:", df.columns.tolist())
+st.set_page_config(layout="wide", page_title="AI Resume Screener")
+st.markdown("<h1 style='text-align:center;'>🤖 AI Resume Screener</h1>", unsafe_allow_html=True)
+st.markdown("---")
 
-    # Warn if score columns are missing
-    required_cols = ["jd_score", "skills_score", "domain_score", "experience_score"]
-    missing_cols = [col for col in required_cols if col not in df.columns]
-    if missing_cols:
-        st.warning(f"⚠️ Missing score columns in data: {missing_cols}")
+# ========== Sidebar Inputs ==========
+with st.sidebar:
+    jd = st.text_area("📄 Paste Job Description", height=200)
+    role = extract_role_from_jd(jd) if jd else "N/A"
+    if jd:
+        st.markdown(f"🧠 **Extracted Role:** `{role}`")
 
-    # Verdict logic (safe)
-    def verdict_logic(row):
-        try:
-            if (
-                row.get("jd_score", 0) >= jd_thresh and
-                row.get("skills_score", 0) >= skills_thresh and
-                row.get("domain_score", 0) >= domain_thresh and
-                row.get("experience_score", 0) >= exp_thresh
+    domain = st.text_input("🏢 Preferred Domain", "")
+    skills = st.text_area("🛠️ Required Skills (comma separated)", "")
+    exp_range = st.selectbox("📈 Required Experience", ["0–1 yrs", "1–3 yrs", "2–4 yrs", "4+ yrs"])
+
+    st.markdown("### 🎚️ Thresholds")
+    jd_thresh = st.slider("JD Similarity", 0, 100, 50)
+    skill_thresh = st.slider("Skills Match", 0, 100, 50)
+    domain_thresh = st.slider("Domain Match", 0, 100, 50)
+    exp_thresh = st.slider("Experience Match", 0, 100, 50)
+    score_thresh = st.slider("Final Score Threshold", 0, 100, 50)
+    top_n = st.number_input("🎯 Top-N Candidates", 0, value=0)
+
+    analyze = st.button("🚀 Analyze from Azure Storage")
+
+# ========== Processing ==========
+
+def load_resumes_from_blob():
+    connection_str = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
+    container = AZURE_CONFIG["resumes_container"]
+    blob_service_client = BlobServiceClient.from_connection_string(connection_str)
+    container_client = blob_service_client.get_container_client(container)
+    blobs = container_client.list_blobs()
+
+    resumes = []
+    for blob in blobs:
+        if not blob.name.lower().endswith(".pdf"):
+            continue
+        blob_client = container_client.get_blob_client(blob.name)
+        content = blob_client.download_blob().readall()
+        resumes.append((blob.name, content))
+    return resumes
+
+if jd and analyze and not st.session_state["analysis_done"]:
+    resumes_from_blob = load_resumes_from_blob()
+    total = len(resumes_from_blob)
+
+    if total == 0:
+        st.warning("No valid PDF resumes found in Azure Blob.")
+    else:
+        progress = st.progress(0, text="Analyzing resumes...")
+        jd_embedding = get_embedding_cached(jd)
+        results = []
+
+        async def process_all():
+            tasks = []
+            for idx, (file_name, file_bytes) in enumerate(resumes_from_blob):
+                resume_text = parse_resume(file_bytes)
+                contact = extract_contact_info(resume_text)
+                chunks = get_text_chunks(resume_text)
+                resume_embedding = get_embedding_cached(" ".join(chunks))
+                jd_sim = round(get_cosine_similarity(resume_embedding, jd_embedding) * 100, 2)
+
+                task = get_resume_analysis_async(
+                    jd=jd,
+                    resume_text=resume_text,
+                    contact=contact,
+                    role=role,
+                    domain=domain,
+                    skills=skills,
+                    experience_range=exp_range,
+                    jd_similarity=jd_sim,
+                    resume_file=file_name
+                )
+                tasks.append(task)
+            return await asyncio.gather(*tasks)
+
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        for i in range(len(resumes_from_blob)):
+            progress.progress(i / total, text=f"Processing {i+1} of {total}...")
+        results = loop.run_until_complete(process_all())
+        loop.close()
+
+        for r in results:
+            r["recruiter_notes"] = ""
+            if r["score"] < score_thresh and r["verdict"] != "reject":
+                r["verdict"] = "reject"
+                r.setdefault("reasons_if_rejected", []).append(f"Score below threshold {r['score']} < {score_thresh}")
+
+        st.success("✅ Resumes processed from Azure!")
+        df = pd.DataFrame(results).fillna("N/A")
+
+        def verdict_logic(row):
+            if row["verdict"] == "reject":
+                return "reject"
+            elif (
+                row["jd_similarity"] < jd_thresh or
+                row["skills_match"] < skill_thresh or
+                row["domain_match"] < domain_thresh or
+                row["experience_match"] < exp_thresh
             ):
-                return "selected"
-            else:
-                return "rejected"
-        except Exception as e:
-            print(f"Error in verdict_logic: {e}")
-            return "rejected"
+                return "review"
+            return "shortlist"
 
-    # Apply verdict logic
-    df["verdict"] = df.apply(verdict_logic, axis=1)
+        df = pd.DataFrame(results).fillna("N/A")
+        
+        # Step 1: Apply verdicts
+        def verdict_logic(row):
+            if row["verdict"] == "reject":
+                return "reject"
+            elif (
+                row["jd_similarity"] < jd_thresh or
+                row["skills_match"] < skill_thresh or
+                row["domain_match"] < domain_thresh or
+                row["experience_match"] < exp_thresh
+            ):
+                return "review"
+            return "shortlist"
+        
+        df["verdict"] = df.apply(verdict_logic, axis=1)
+        
+        # Step 2: Always sort by score descending
+        df = df.sort_values("score", ascending=False).copy()
+        
+        # Step 3: Apply Top-N after sorting
+        if top_n > 0:
+            df = df.head(top_n).copy()
+            df["verdict"] = "shortlist"  # Optional: force verdict if needed
+        
+        # Step 4: Store to session state
+        st.session_state["candidate_df"] = df
+        st.session_state["analysis_done"] = True
 
-    # Handle missing emails
-    df["email"] = df["email"].fillna("")
 
-    # Show results table
-    st.subheader("Analyzed Resume Data")
-    st.dataframe(df)
-
-    # Send emails based on verdict
-    for _, row in df.iterrows():
-        email = row["email"]
-        name = row.get("name", "Candidate")
-        verdict = row["verdict"]
-
-        if email:  # Only send if email is present
-            if verdict == "selected":
-                send_email_to_candidate(email, "selection", name)
-            elif verdict == "rejected":
-                send_email_to_candidate(email, "rejection", name)
-            elif verdict == "missing_info":
-                send_email_to_candidate(email, "missing_info", name)
+# ========== Display ==========
+if st.session_state["candidate_df"] is not None:
+    if USE_TABS:
+        show_candidate_tabs(
+            st.session_state["candidate_df"],
+            score_thresh,
+            jd_thresh,
+            skill_thresh,
+            domain_thresh,
+            exp_thresh
+        )
+    else:
+        st.dataframe(st.session_state["candidate_df"])
