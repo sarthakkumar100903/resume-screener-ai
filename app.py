@@ -1,45 +1,40 @@
-from dotenv import load_dotenv
-load_dotenv()
-import streamlit as st
-import pandas as pd
-import asyncio
+# --- IMPORTS ---
 import os
-from datetime import datetime
+import asyncio
+import pandas as pd
+import streamlit as st
+from dotenv import load_dotenv
 from azure.storage.blob import BlobServiceClient
 
 from constants import AZURE_CONFIG
+from backend import get_resume_analysis_async, extract_role_from_jd
 from utils import (
     parse_resume,
     get_text_chunks,
     get_embedding_cached,
     get_cosine_similarity,
-    extract_contact_info,
-    upload_to_blob
+    extract_contact_info
 )
-from backend import get_resume_analysis_async, extract_role_from_jd
-from email_generator import schedule_interview
+from email_generator import send_email_to_candidate  # 🆕 Send email after analysis
 
-# Google OAuth (optional)
-SCOPES = ['https://www.googleapis.com/auth/calendar.events']
-
-# Try importing display_section
 try:
     from display_section import show_candidate_tabs
     USE_TABS = True
 except ImportError:
     USE_TABS = False
 
-# Session state init
+# --- PAGE SETUP ---
+st.set_page_config(layout="wide", page_title="AI Resume Screener")
+st.markdown("<h1 style='text-align:center;'>🤖 AI Resume Screener</h1>", unsafe_allow_html=True)
+st.markdown("---")
+
+# --- SESSION STATE ---
 if "candidate_df" not in st.session_state:
     st.session_state["candidate_df"] = None
 if "analysis_done" not in st.session_state:
     st.session_state["analysis_done"] = False
 
-st.set_page_config(layout="wide", page_title="AI Resume Screener")
-st.markdown("<h1 style='text-align:center;'>🤖 AI Resume Screener</h1>", unsafe_allow_html=True)
-st.markdown("---")
-
-# ========== Sidebar Inputs ==========
+# --- SIDEBAR INPUTS ---
 with st.sidebar:
     jd = st.text_area("📄 Paste Job Description", height=200)
     role = extract_role_from_jd(jd) if jd else "N/A"
@@ -59,9 +54,9 @@ with st.sidebar:
     top_n = st.number_input("🎯 Top-N Candidates", 0, value=0)
 
     analyze = st.button("🚀 Analyze from Azure Storage")
+    send_emails = st.checkbox("✉️ Send Emails to Candidates")
 
-# ========== Processing ==========
-
+# --- LOAD RESUMES FROM BLOB ---
 def load_resumes_from_blob():
     connection_str = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
     container = AZURE_CONFIG["resumes_container"]
@@ -71,19 +66,19 @@ def load_resumes_from_blob():
 
     resumes = []
     for blob in blobs:
-        if not blob.name.lower().endswith(".pdf"):
-            continue
-        blob_client = container_client.get_blob_client(blob.name)
-        content = blob_client.download_blob().readall()
-        resumes.append((blob.name, content))
+        if blob.name.lower().endswith(".pdf"):
+            blob_client = container_client.get_blob_client(blob.name)
+            content = blob_client.download_blob().readall()
+            resumes.append((blob.name, content))
     return resumes
 
+# --- ANALYSIS LOGIC ---
 if jd and analyze and not st.session_state["analysis_done"]:
     resumes_from_blob = load_resumes_from_blob()
     total = len(resumes_from_blob)
 
     if total == 0:
-        st.warning("No valid PDF resumes found in Azure Blob.")
+        st.warning("No PDF resumes found in Azure Blob.")
     else:
         progress = st.progress(0, text="Analyzing resumes...")
         jd_embedding = get_embedding_cached(jd)
@@ -119,15 +114,13 @@ if jd and analyze and not st.session_state["analysis_done"]:
         results = loop.run_until_complete(process_all())
         loop.close()
 
+        # Post-processing
         for r in results:
             r["recruiter_notes"] = ""
             if r["score"] < score_thresh and r["verdict"] != "reject":
                 r["verdict"] = "reject"
                 r.setdefault("reasons_if_rejected", []).append(f"Score below threshold {r['score']} < {score_thresh}")
 
-        st.success("✅ Resumes processed from Azure!")
-        df = pd.DataFrame(results).fillna("N/A")
-
         def verdict_logic(row):
             if row["verdict"] == "reject":
                 return "reject"
@@ -141,36 +134,26 @@ if jd and analyze and not st.session_state["analysis_done"]:
             return "shortlist"
 
         df = pd.DataFrame(results).fillna("N/A")
-        
-        # Step 1: Apply verdicts
-        def verdict_logic(row):
-            if row["verdict"] == "reject":
-                return "reject"
-            elif (
-                row["jd_similarity"] < jd_thresh or
-                row["skills_match"] < skill_thresh or
-                row["domain_match"] < domain_thresh or
-                row["experience_match"] < exp_thresh
-            ):
-                return "review"
-            return "shortlist"
-        
         df["verdict"] = df.apply(verdict_logic, axis=1)
-        
-        # Step 2: Always sort by score descending
         df = df.sort_values("score", ascending=False).copy()
-        
-        # Step 3: Apply Top-N after sorting
+
         if top_n > 0:
             df = df.head(top_n).copy()
-            df["verdict"] = "shortlist"  # Optional: force verdict if needed
-        
-        # Step 4: Store to session state
+            df["verdict"] = "shortlist"  # force top-N to be marked as shortlisted
+
         st.session_state["candidate_df"] = df
         st.session_state["analysis_done"] = True
+        st.success("✅ Resumes analyzed and scored!")
 
+        if send_emails:
+            for _, row in df.iterrows():
+                email = row.get("email", "")
+                verdict = row.get("verdict", "")
+                name = row.get("name", "Candidate")
+                if email and verdict:
+                    send_email_to_candidate(email, verdict, name)
 
-# ========== Display ==========
+# --- DISPLAY RESULTS ---
 if st.session_state["candidate_df"] is not None:
     if USE_TABS:
         show_candidate_tabs(
@@ -183,4 +166,3 @@ if st.session_state["candidate_df"] is not None:
         )
     else:
         st.dataframe(st.session_state["candidate_df"])
-
