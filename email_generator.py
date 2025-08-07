@@ -3,8 +3,8 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
 def send_email_to_candidate(to_email, verdict, candidate_name="Candidate"):
-    from_email = "your_email@gmail.com"  # 🔁 Replace with your Gmail address
-    app_password = "your_app_password_here"  # 🔁 Use App Password (not your Gmail password)
+    from_email = "demoprojectid3@gmail.com"  # 🔁 Replace with your Gmail address
+    app_password = "rpdsmhgbvppgldjx"  # 🔁 Use App Password (not your Gmail password)
 
     if verdict == "selection":
         subject = "Congratulations! You've been shortlisted 🎉"
