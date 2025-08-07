@@ -16,7 +16,7 @@ from utils import (
     extract_contact_info
 )
 from backend import get_resume_analysis_async, extract_role_from_jd
-from email_generator import schedule_interview
+# from email_generator import schedule_interview
 
 # Optional tabbed UI
 try:
