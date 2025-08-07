@@ -1,116 +1,63 @@
-import os
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from dotenv import load_dotenv
-import pandas as pd
 
-# Load environment variables from .env file
-load_dotenv()
+def send_email_to_candidate(to_email, verdict, candidate_name="Candidate"):
+    from_email = "your_email@gmail.com"  # 🔁 Replace with your Gmail address
+    app_password = "your_app_password_here"  # 🔁 Use App Password (not your Gmail password)
 
-# Credentials from environment
-FROM_EMAIL = os.getenv("EMAIL")
-EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
+    if verdict == "selection":
+        subject = "Congratulations! You've been shortlisted 🎉"
+        body = f"""Dear {candidate_name},
 
-# Gmail SMTP server details
-SMTP_SERVER = "smtp.gmail.com"
-SMTP_PORT = 465
+We are pleased to inform you that you have been shortlisted for the next round of interviews.
 
-# ---------- Email Sending Logic ----------
-def send_email(to_email, subject, body):
-    message = MIMEMultipart()
-    message["From"] = FROM_EMAIL
-    message["To"] = to_email
-    message["Subject"] = subject
-    message.attach(MIMEText(body, "plain"))
+Our HR team will connect with you shortly with further details.
+
+Best regards,  
+HR Team"""
+    
+    elif verdict == "rejection":
+        subject = "Application Status Update"
+        body = f"""Dear {candidate_name},
+
+Thank you for taking the time to apply.
+
+After careful review, we regret to inform you that you have not been selected for the position.
+
+We appreciate your interest and wish you all the best in your career.
+
+Warm regards,  
+HR Team"""
+    
+    elif verdict == "missing_info":
+        subject = "Incomplete Application - Action Required"
+        body = f"""Dear {candidate_name},
+
+We noticed that some required information is missing from your application.
+
+Kindly resubmit your resume with complete details so we can process your application further.
+
+Thanks and regards,  
+HR Team"""
+    
+    else:
+        print(f"⚠️ Unknown verdict '{verdict}' — skipping email to {to_email}")
+        return  # Skip if verdict is unknown
+
+    # Build the email message
+    msg = MIMEMultipart()
+    msg["From"] = from_email
+    msg["To"] = to_email
+    msg["Subject"] = subject
+    msg.attach(MIMEText(body, "plain"))
 
     try:
-        with smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT) as server:
-            server.login(FROM_EMAIL, EMAIL_PASSWORD)
-            server.sendmail(FROM_EMAIL, to_email, message.as_string())
-        print(f"✅ Email sent to {to_email} with subject: {subject}")
-        return True
+        server = smtplib.SMTP("smtp.gmail.com", 587)
+        server.starttls()
+        server.login(from_email, app_password)
+        server.send_message(msg)
+        server.quit()
+        print(f"✅ Email sent to {to_email} for verdict: {verdict}")
     except Exception as e:
         print(f"❌ Failed to send email to {to_email}: {e}")
-        return False
-
-# ---------- Missing Info Checker ----------
-def check_missing_info(row):
-    missing_fields = []
-
-    def is_missing(value):
-        return pd.isna(value) or str(value).strip().lower() in ["", "n/a"]
-
-    if is_missing(row.get("name", "")):
-        missing_fields.append("name")
-    if is_missing(row.get("email", "")):
-        missing_fields.append("email")
-    if is_missing(row.get("phone", "")):
-        missing_fields.append("phone number")
-
-    return missing_fields
-
-# ---------- Email Templates ----------
-def send_missing_info_email(to_email, name, missing_fields):
-    subject = "Additional Information Required for Application"
-    missing_str = ", ".join(missing_fields).title()
-    body = f"""
-Dear {name or 'Candidate'},
-
-Thank you for submitting your resume for the position.
-
-However, we noticed that the following information is missing from your application: {missing_str}.
-Kindly reply to this email with the missing details so we can continue processing your application.
-
-Best regards,  
-Recruitment Team
-"""
-    return send_email(to_email, subject, body)
-
-def send_rejection_email(to_email, name):
-    subject = "Update on Your Job Application"
-    body = f"""
-Dear {name or 'Candidate'},
-
-Thank you for your interest in the position and for taking the time to apply.
-
-After careful consideration, we regret to inform you that we will not be moving forward with your application at this time.
-
-We wish you all the best in your job search and future endeavors.
-
-Best regards,  
-Recruitment Team
-"""
-    return send_email(to_email, subject, body)
-
-def send_selection_email(to_email, name):
-    subject = "Congratulations! You've Been Selected"
-    body = f"""
-Dear {name or 'Candidate'},
-
-We are pleased to inform you that you have been selected for the next stage of our hiring process.
-
-Our team will be in touch shortly with the next steps. Congratulations once again!
-
-Best regards,  
-Recruitment Team
-"""
-    return send_email(to_email, subject, body)
-
-# ---------- Dispatcher: Decides Which Email to Send ----------
-def send_email_to_candidate(row):
-    email = row.get("email", "")
-    name = row.get("name", "")
-    verdict = row.get("verdict", "").lower()
-
-    if not email:
-        print("❌ No email found for candidate.")
-        return
-
-    missing_fields = check_missing_info(row)
-    if missing_fields:
-        send_missing_info_email(email, name, missing_fields)
-    elif verdict == "selected":
-        send_selection_email(email, name)
-    elif verdict == "rejected":
-        send_rejection_email(email, name)
