@@ -17,7 +17,6 @@ from utils import (
     upload_to_blob
 )
 from backend import get_resume_analysis_async, extract_role_from_jd
-from email_generator import schedule_interview
 
 # Google OAuth (optional)
 SCOPES = ['https://www.googleapis.com/auth/calendar.events']
@@ -127,20 +126,6 @@ if jd and analyze and not st.session_state["analysis_done"]:
 
         st.success("✅ Resumes processed from Azure!")
         df = pd.DataFrame(results).fillna("N/A")
-
-        def verdict_logic(row):
-            if row["verdict"] == "reject":
-                return "reject"
-            elif (
-                row["jd_similarity"] < jd_thresh or
-                row["skills_match"] < skill_thresh or
-                row["domain_match"] < domain_thresh or
-                row["experience_match"] < exp_thresh
-            ):
-                return "review"
-            return "shortlist"
-
-        df = pd.DataFrame(results).fillna("N/A")
         
         # Step 1: Apply verdicts
         def verdict_logic(row):
@@ -183,3 +168,35 @@ if st.session_state["candidate_df"] is not None:
         )
     else:
         st.dataframe(st.session_state["candidate_df"])
+
+    # ===== Email Action Buttons =====
+    st.markdown("### 📧 Send Emails to Candidates")
+    df = st.session_state["candidate_df"]
+
+    from email_generator import (
+        send_selection_email,
+        send_rejection_email,
+        send_missing_info_email,
+        check_missing_info
+    )
+
+    for idx, row in df.iterrows():
+        st.write(f"**{row['name']}** | {row['email']} | Verdict: {row['verdict']} | Score: {row['score']}")
+
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            if st.button(f"✅ Select {row['name']}", key=f"select_{idx}"):
+                send_selection_email(row["email"], row["name"])
+                st.success(f"Selection email sent to {row['name']}")
+        with col2:
+            if st.button(f"❌ Reject {row['name']}", key=f"reject_{idx}"):
+                send_rejection_email(row["email"], row["name"])
+                st.success(f"Rejection email sent to {row['name']}")
+        with col3:
+            if st.button(f"📩 Missing Info {row['name']}", key=f"missing_{idx}"):
+                missing_fields = check_missing_info(row)
+                if missing_fields:
+                    send_missing_info_email(row["email"], row["name"], missing_fields)
+                    st.success(f"Missing info email sent to {row['name']}")
+                else:
+                    st.info(f"No missing fields for {row['name']}")
