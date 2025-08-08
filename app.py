@@ -1,5 +1,3 @@
- # app.py
-
 import streamlit as st
 import pandas as pd
 import base64
@@ -13,7 +11,6 @@ import uuid
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
-datetime.now()
 import datetime
 from datetime import timedelta
 
@@ -32,13 +29,27 @@ from utils import (
 from backend import get_resume_analysis_async, extract_role_from_jd
 from pdf_utils import generate_summary_pdf
 from email_generator import send_email, check_missing_info, send_missing_info_email
-# flow = InstalledAppFlow.from_client_secrets_file(
-#     'credentials.json', SCOPES
-# )
-# creds = flow.run_local_server(port=0)
 
+# === NEW IMPORTS for Azure Blob ===
+from azure.storage.blob import BlobServiceClient
 
-# At the top of your Streamlit app
+# === Initialize BlobServiceClient once ===
+blob_service_client = BlobServiceClient.from_connection_string(AZURE_CONFIG["blob_connection_string"])
+resumes_container_client = blob_service_client.get_container_client(AZURE_CONFIG["resumes_container"])
+
+# === Function to download all PDF blobs from container ===
+def download_all_pdf_blobs():
+    blobs = resumes_container_client.list_blobs()
+    pdf_files = []
+    for blob in blobs:
+        if blob.name.lower().endswith(".pdf"):
+            downloader = resumes_container_client.download_blob(blob.name)
+            pdf_bytes = downloader.readall()
+            pdf_files.append((blob.name, pdf_bytes))
+    return pdf_files
+
+# =========================
+# Existing session state setup & page config
 if "candidate_df" not in st.session_state:
     st.session_state["candidate_df"] = None
 if "analysis_done" not in st.session_state:
@@ -68,50 +79,98 @@ with st.sidebar:
     score_thresh = st.slider("Final Score Threshold", 0, 100, 50)
     top_n = st.number_input("🎯 Top-N Candidates", 0, value=0)
 
-    uploaded_files = st.file_uploader("📤 Upload Resumes (PDF)", type=["pdf"], accept_multiple_files=True)
+    # === NEW: Checkbox to load resumes from Azure Blob ===
+    load_from_blob = st.checkbox("📂 Load Resumes Directly from Azure Blob Storage", value=False)
+
+    # Keep your original file uploader but only enable if not loading from blob
+    if not load_from_blob:
+        uploaded_files = st.file_uploader("📤 Upload Resumes (PDF)", type=["pdf"], accept_multiple_files=True)
+    else:
+        uploaded_files = None  # Ignore manual upload if loading from blob
+
     analyze = st.button("🚀 Analyze")
 
 # ========== Processing ==========
-if jd and uploaded_files and analyze and not st.session_state["analysis_done"]:
+if jd and analyze and not st.session_state["analysis_done"]:
     progress = st.progress(0, text="Starting Analysis...")
-    total = len(uploaded_files)
+
+    # === NEW: If loading from blob, get resumes from Azure blob storage ===
+    if load_from_blob:
+        blob_files = download_all_pdf_blobs()
+        total = len(blob_files)
+        if total == 0:
+            st.warning("No PDF resumes found in Azure Blob storage container.")
+            st.stop()
+    else:
+        blob_files = None
+        total = len(uploaded_files) if uploaded_files else 0
+        if total == 0:
+            st.warning("Please upload at least one resume or select load from blob option.")
+            st.stop()
+
     results = []
     jd_embedding = get_embedding_cached(jd)
-    
 
     async def process_all():
         tasks = []
-        for idx, file in enumerate(uploaded_files):
-            file_bytes = file.read()
-            file_name = file.name.replace(".pdf", "")
-            upload_to_blob(file_bytes, file_name + ".pdf", AZURE_CONFIG["resumes_container"])
 
-            resume_text = parse_resume(file_bytes)
-            contact = extract_contact_info(resume_text)
+        if load_from_blob:
+            for idx, (file_name, file_bytes) in enumerate(blob_files):
+                # Upload blob files again (optional, but you may skip if already there)
+                upload_to_blob(file_bytes, file_name, AZURE_CONFIG["resumes_container"])
 
-            chunks = get_text_chunks(resume_text)
-            resume_embedding = get_embedding_cached(" ".join(chunks))
-            jd_sim = round(get_cosine_similarity(resume_embedding, jd_embedding) * 100, 2)
+                resume_text = parse_resume(file_bytes)
+                contact = extract_contact_info(resume_text)
 
-            task = get_resume_analysis_async(
-                jd=jd,
-                resume_text=resume_text,
-                contact=contact,
-                role=role,
-                domain=domain,
-                skills=skills,
-                experience_range=exp_range,
-                jd_similarity=jd_sim,
-                resume_file=file_name
-            )
-            tasks.append(task)
+                chunks = get_text_chunks(resume_text)
+                resume_embedding = get_embedding_cached(" ".join(chunks))
+                jd_sim = round(get_cosine_similarity(resume_embedding, jd_embedding) * 100, 2)
+
+                task = get_resume_analysis_async(
+                    jd=jd,
+                    resume_text=resume_text,
+                    contact=contact,
+                    role=role,
+                    domain=domain,
+                    skills=skills,
+                    experience_range=exp_range,
+                    jd_similarity=jd_sim,
+                    resume_file=file_name
+                )
+                tasks.append(task)
+        else:
+            for idx, file in enumerate(uploaded_files):
+                file_bytes = file.read()
+                file_name = file.name.replace(".pdf", "")
+                upload_to_blob(file_bytes, file_name + ".pdf", AZURE_CONFIG["resumes_container"])
+
+                resume_text = parse_resume(file_bytes)
+                contact = extract_contact_info(resume_text)
+
+                chunks = get_text_chunks(resume_text)
+                resume_embedding = get_embedding_cached(" ".join(chunks))
+                jd_sim = round(get_cosine_similarity(resume_embedding, jd_embedding) * 100, 2)
+
+                task = get_resume_analysis_async(
+                    jd=jd,
+                    resume_text=resume_text,
+                    contact=contact,
+                    role=role,
+                    domain=domain,
+                    skills=skills,
+                    experience_range=exp_range,
+                    jd_similarity=jd_sim,
+                    resume_file=file_name
+                )
+                tasks.append(task)
 
         return await asyncio.gather(*tasks)
 
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
 
-    for i in range(len(uploaded_files)):
+    # Progress update while processing
+    for i in range(total):
         progress.progress(i / total, text=f"Processing {i+1} of {total}...")
 
     results = loop.run_until_complete(process_all())
@@ -131,11 +190,9 @@ if jd and uploaded_files and analyze and not st.session_state["analysis_done"]:
     missing_info = df[df.apply(lambda row: not row.get("contact", {}).get("email"), axis=1)]
     for _, row in missing_info.iterrows():
         email = row.get("contact", {}) or {}
-        #email= contact.get('email')
         if email:
             send_missing_info_email(email=email, name=row.get("name", "Candidate"))
 
-    #df = df[~df.index.isin(missing_info_df.index)]
     df["has_missing_info"] = df.apply(lambda row: not row.get("contact", {}).get("email") or not row.get("contact", {}).get("phone"), axis=1)
 
     for _, row in df[df["has_missing_info"]].iterrows():
@@ -145,8 +202,6 @@ if jd and uploaded_files and analyze and not st.session_state["analysis_done"]:
 
     # Verdict Logic
     def verdict_logic(row):
-        #if row["has_missing_info"]:
-            #return "review"
         if row["verdict"] == "reject":
             return "reject"
         elif (
@@ -170,6 +225,7 @@ if jd and uploaded_files and analyze and not st.session_state["analysis_done"]:
         df = pd.concat([top, rest], ignore_index=True)
     st.session_state["candidate_df"] = df
     st.session_state["analysis_done"] = True
+
 
     # ========== Display Tabs ==========
 if st.session_state["candidate_df"] is not None:
