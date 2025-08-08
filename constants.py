@@ -1,18 +1,28 @@
 import os
 
 AZURE_CONFIG = {
-    "openai_key": os.getenv("AZURE_OPENAI_KEY"),
-    "azure_endpoint": os.getenv("AZURE_OPENAI_ENDPOINT"),
+    "openai_key": "E8H5xVQpBp0bhrBW0ejunGDae8Xm17d6xnonrYXPhN1jf4G76OeMJQQJ99BHACfhMk5XJ3w3AAABACOGVpeS",
+    "azure_endpoint": "https://screener-resume.openai.azure.com/",
     "api_version": "2024-04-01-preview",
-    "connection_string": os.getenv("AZURE_STORAGE_CONNECTION_STRING"),
+    "connection_string": "DefaultEndpointsProtocol=https;AccountName=resumescreenerstorage;AccountKey=viOxwfuH/revazwvooYHEBfbVmLaPLdEzwIw6KVjK6exkopdQcLhHzP/WoLzXYIzR1kVEQilT/jP+ASt60C1gA==;EndpointSuffix=core.windows.net",
     "resumes_container": "resumes",
     "summaries_container": "summaries",
     "csv_container": "csvdata"
+    # "openai_key": os.getenv("AZURE_OPENAI_KEY"),
+    # "azure_endpoint": os.getenv("AZURE_OPENAI_ENDPOINT"),
+    # "api_version": "2024-04-01-preview",
+    # "connection_string": os.getenv("AZURE_STORAGE_CONNECTION_STRING"),
+    # "resumes_container": "resumes",
+    # "summaries_container": "summaries",
+    # "csv_container": "csvdata"
 }
 MODEL_CONFIG = {
-    "model_name": "gpt-35-turbo",  # or "gpt-4" based on your usage
-    "temperature": 0.7,
-    "max_tokens": 1000
+    # "model_name": "gpt-35-turbo",  # or "gpt-4" based on your usage
+    "fast_gpt_model": "gpt-35-turbo",             # JD role extraction
+    "deep_gpt_model": "gpt-4.1",                  # Resume evaluation
+    "embedding_model": "text-embedding-ada-002"   # JD-resume similarity
+    # "temperature": 0.7,
+    # "max_tokens": 1000
 }
 
 # Weights for scoring (you can customize these as needed)
