@@ -306,39 +306,39 @@ if st.session_state["candidate_df"] is not None:
                                     st.success(f"Email sent to {row['name']}")
                                 else:
                                     st.error("Failed to send email.")
-                                    # === Schedule Interview (Only for shortlisted candidates) ===
-                                shortlisted_df = df[df["verdict"] == "shortlist"]
-                                for i, row in shortlisted_df.iterrows():
-                                    st.subheader(f"{row['name']} - {row['email']}")
-                                    default_dt = datetime.datetime.now() + datetime.timedelta(days=1)
+                                #     # === Schedule Interview (Only for shortlisted candidates) ===
+                                # shortlisted_df = df[df["verdict"] == "shortlist"]
+                                # for i, row in shortlisted_df.iterrows():
+                                #     st.subheader(f"{row['name']} - {row['email']}")
+                                #     default_dt = datetime.datetime.now() + datetime.timedelta(days=1)
 
-                                    # Interview date input (default = tomorrow)
-                                    interview_date = st.text_input(
-                                        f"Interview Date for {row["name"]}",
-                                        value=(datetime.datetime.now() + timedelta(days=1)).date().isoformat()
-                                    )
+                                #     # Interview date input (default = tomorrow)
+                                #     interview_date = st.text_input(
+                                #         f"Interview Date for {row["name"]}",
+                                #         value=(datetime.datetime.now() + timedelta(days=1)).date().isoformat()
+                                #     )
 
-                                    # Interview time input (dropdown, 30 min intervals)
-                                    interview_time = st.selectbox(
-                                        f"Interview Time for {row["name"]}",
-                                        [f"{hour:02d}:{minute:02d}" for hour in range(9, 18) for minute in (0, 30)]
-                                    )
+                                #     # Interview time input (dropdown, 30 min intervals)
+                                #     interview_time = st.selectbox(
+                                #         f"Interview Time for {row["name"]}",
+                                #         [f"{hour:02d}:{minute:02d}" for hour in range(9, 18) for minute in (0, 30)]
+                                #     )
 
-                                    if st.button(f"📅 Schedule Interview - {email}"):
-                                        st.write("🔄 Scheduling interview...")
+                                #     if st.button(f"📅 Schedule Interview - {email}"):
+                                #         st.write("🔄 Scheduling interview...")
 
-                                        if not interview_date or not interview_time:
-                                            st.warning("⚠️ Please enter both interview date and time.")
-                                        else:
-                                            try:
-                                                meet_link = schedule_interview(email, row["name"], interview_date.replace("-", "/"), interview_time)
-                                                if meet_link:
-                                                    st.success(f"✅ Interview Scheduled! Google Meet: {meet_link}")
-                                                    st.markdown(f"[Join Meet]({meet_link})", unsafe_allow_html=True)
-                                                else:
-                                                    st.warning("⚠️ Schedule function ran but did not return a meeting link.")
-                                            except Exception as e:
-                                                st.error(f"❌ Failed to schedule interview: {e}")
+                                #         if not interview_date or not interview_time:
+                                #             st.warning("⚠️ Please enter both interview date and time.")
+                                #         else:
+                                #             try:
+                                #                 meet_link = schedule_interview(email, row["name"], interview_date.replace("-", "/"), interview_time)
+                                #                 if meet_link:
+                                #                     st.success(f"✅ Interview Scheduled! Google Meet: {meet_link}")
+                                #                     st.markdown(f"[Join Meet]({meet_link})", unsafe_allow_html=True)
+                                #                 else:
+                                #                     st.warning("⚠️ Schedule function ran but did not return a meeting link.")
+                                #             except Exception as e:
+                                #                 st.error(f"❌ Failed to schedule interview: {e}")
 
 
                             elif verdict== "review":
