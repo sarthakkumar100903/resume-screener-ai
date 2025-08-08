@@ -1,15 +1,13 @@
-from dotenv import load_dotenv
-load_dotenv()
+# backend.py — GPT Evaluator + Role Extractor
 
 import json
-import logging
 from constants import AZURE_CONFIG, MODEL_CONFIG, WEIGHTS, STRICT_GPT_PROMPT
 from openai import AzureOpenAI
 from utils import chunk_text
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
 
-# ========== GPT Client Setup ==========
+# GPT client
 client = AzureOpenAI(
     api_key=AZURE_CONFIG["openai_key"],
     api_version=AZURE_CONFIG["api_version"],
@@ -30,6 +28,7 @@ Job Description:
 {jd_text[:4000]}
 \"\"\"
 """
+
         response = client.chat.completions.create(
             model=MODEL_CONFIG["fast_gpt_model"],
             messages=[{"role": "user", "content": prompt}],
@@ -37,10 +36,8 @@ Job Description:
             max_tokens=20,
         )
         role = response.choices[0].message.content.strip()
-        # Return role if length looks reasonable else "N/A"
         return role if 2 <= len(role.split()) <= 6 else "N/A"
-    except Exception as e:
-        logging.error(f"Error extracting role from JD: {e}")
+    except Exception:
         return "N/A"
 
 # ========== Async Resume Evaluator ==========
@@ -57,7 +54,7 @@ async def get_resume_analysis_async(
 ) -> dict:
     try:
         chunks = chunk_text(resume_text)
-        combined_text = "\n\n".join(chunks[:3])  # Limit to ~3000 tokens
+        combined_text = "\n\n".join(chunks[:3])  # ~3000 tokens
 
         messages = [
             {"role": "system", "content": STRICT_GPT_PROMPT.strip()},
@@ -85,79 +82,66 @@ RESUME:
         return parse_gpt_response(raw, contact, role, jd_similarity, resume_text, resume_file)
 
     except Exception as e:
-        logging.error(f"Error in GPT resume analysis: {e}")
         return failed_json(contact, role, jd_similarity, resume_text, resume_file, reason=str(e))
 
 # ========== GPT Response Parser ==========
 def parse_gpt_response(raw_json, contact, role, jd_similarity, resume_text, resume_file):
     try:
         parsed = json.loads(raw_json)
-    except json.JSONDecodeError:
-        logging.error("GPT response is not valid JSON:\n%s", raw_json)
-        return failed_json(contact, role, jd_similarity, resume_text, resume_file, reason="❌ GPT response not valid JSON")
+    except:
+        return failed_json(contact, role, jd_similarity, resume_text, resume_file, reason="❌ GPT parsing failed")
 
     def get(k, fallback):
-        v = parsed.get(k, fallback)
-        # Convert numeric values safely to float if expected
-        if isinstance(fallback, (int, float)):
-            try:
-                v = float(v)
-            except (ValueError, TypeError):
-                v = fallback
-        return v
+        return parsed.get(k, fallback)
 
     skills = get("skills_match", 0)
     domain = get("domain_match", 0)
     exp = get("experience_match", 0)
-    jd_sim = float(jd_similarity) if jd_similarity is not None else 0.0
-
-    # Defensive defaults for weights
-    skills_w = float(WEIGHTS.get("skills_match", 1))
-    domain_w = float(WEIGHTS.get("domain_match", 1))
-    exp_w = float(WEIGHTS.get("experience_match", 1))
-    jd_sim_w = float(WEIGHTS.get("jd_similarity", 1))
 
     final_score = (
-        skills * skills_w +
-        domain * domain_w +
-        exp * exp_w +
-        jd_sim * jd_sim_w
+        skills * WEIGHTS["skills_match"] +
+        domain * WEIGHTS["domain_match"] +
+        exp * WEIGHTS["experience_match"] +
+        jd_similarity * WEIGHTS["jd_similarity"]
     )
+
     score_rounded = round(final_score, 2)
 
-    verdict = parsed.get("verdict", "review")
-    rejection_reasons = parsed.get("reasons_if_rejected", [])
+    # Reject if below threshold score
+    verdict = get("verdict", "review")
+    rejection_reasons = get("reasons_if_rejected", [])
     if score_rounded < 50:
         verdict = "reject"
         rejection_reasons.append(f"Score below threshold ({score_rounded} < 50)")
 
-    extracted_name = parsed.get("name", "N/A") or contact.get("name", "N/A")
+    # Final fallback contact name if GPT didn't extract
+    extracted_name = get("name", "N/A") or contact.get("name", "N/A")
     final_name = extracted_name if extracted_name != "N/A" else contact.get("name", "N/A")
 
     return {
         "name": final_name or "N/A",
         "email": contact.get("email", "N/A"),
         "phone": contact.get("phone", "N/A"),
-        "jd_role": parsed.get("jd_role", role),
+        "jd_role": get("jd_role", role),
         "skills_match": skills,
         "domain_match": domain,
         "experience_match": exp,
-        "jd_similarity": jd_sim,
+        "jd_similarity": jd_similarity,
         "score": score_rounded,
-        "fitment": parsed.get("fitment", "N/A"),
-        "summary_5_lines": parsed.get("summary_5_lines", "N/A"),
-        "red_flags": parsed.get("red_flags", []),
-        "missing_gaps": parsed.get("missing_gaps", []),
-        "fraud_detected": parsed.get("fraud_detected", False),
+        "fitment": get("fitment", "N/A"),
+        "summary_5_lines": get("summary_5_lines", "N/A"),
+        "red_flags": get("red_flags", []),
+        "missing_gaps": get("missing_gaps", []),
+        "fraud_detected": get("fraud_detected", False),
         "reasons_if_rejected": rejection_reasons,
-        "recommendation": parsed.get("recommendation", "N/A"),
-        "highlights": parsed.get("highlights", []),
+        "recommendation": get("recommendation", "N/A"),
+        "highlights": get("highlights", []),
         "verdict": verdict,
         "resume_text": resume_text,
         "resume_file": resume_file
     }
 
-# ========== Fallback for GPT Failure ==========
+# ========== Fallback on GPT Failure ==========
 def failed_json(contact, role, jd_similarity, resume_text, resume_file, reason="GPT error"):
     return {
         "name": contact.get("name", "N/A"),
@@ -167,7 +151,7 @@ def failed_json(contact, role, jd_similarity, resume_text, resume_file, reason="
         "skills_match": 0,
         "domain_match": 0,
         "experience_match": 0,
-        "jd_similarity": jd_similarity if jd_similarity is not None else 0,
+        "jd_similarity": jd_similarity,
         "score": 0,
         "fitment": reason,
         "summary_5_lines": "N/A",
