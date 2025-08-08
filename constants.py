@@ -26,11 +26,17 @@ MODEL_CONFIG = {
 }
 
 # Weights for scoring (you can customize these as needed)
+# WEIGHTS = {
+#     "skills": 0.4,
+#     "experience": 0.3,
+#     "certifications": 0.2,
+#     "projects": 0.1
+# }
 WEIGHTS = {
-    "skills": 0.4,
-    "experience": 0.3,
-    "certifications": 0.2,
-    "projects": 0.1
+    "jd_similarity": 0.4,
+    "skills_match": 0.3,
+    "domain_match": 0.2,
+    "experience_match": 0.1
 }
 
 # Strict prompt for GPT model to follow specific behavior
