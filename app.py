@@ -181,54 +181,34 @@ if st.session_state["candidate_df"] is not None:
         check_missing_info
     )
 
-    table_html = """
-    <table style="width:100%; border-collapse: collapse;">
-        <thead>
-            <tr style="background-color:#f2f2f2; text-align:left;">
-                <th style="padding:8px; border:1px solid #ddd;">Name</th>
-                <th style="padding:8px; border:1px solid #ddd;">Email</th>
-                <th style="padding:8px; border:1px solid #ddd;">Verdict</th>
-                <th style="padding:8px; border:1px solid #ddd;">Score</th>
-                <th style="padding:8px; border:1px solid #ddd;">Actions</th>
-            </tr>
-        </thead>
-        <tbody>
-    """
+    # Table header
+    header_cols = st.columns([2, 3, 2, 1, 3])
+    header_cols[0].markdown("**Name**")
+    header_cols[1].markdown("**Email**")
+    header_cols[2].markdown("**Verdict**")
+    header_cols[3].markdown("**Score**")
+    header_cols[4].markdown("**Actions**")
 
     for idx, row in df.iterrows():
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            select_btn = st.button(f"✅", key=f"select_{idx}")
-        with col2:
-            reject_btn = st.button(f"❌", key=f"reject_{idx}")
-        with col3:
-            missing_btn = st.button(f"📩", key=f"missing_{idx}")
+        cols = st.columns([2, 3, 2, 1, 3])
 
-        if select_btn:
-            send_selection_email(row["email"], row["name"])
-            st.success(f"Selection email sent to {row['name']}")
-        if reject_btn:
-            send_rejection_email(row["email"], row["name"])
-            st.success(f"Rejection email sent to {row['name']}")
-        if missing_btn:
-            missing_fields = check_missing_info(row)
-            if missing_fields:
-                send_missing_info_email(row["email"], row["name"], missing_fields)
-                st.success(f"Missing info email sent to {row['name']}")
-            else:
-                st.info(f"No missing fields for {row['name']}")
+        cols[0].write(row["name"])
+        cols[1].write(row["email"])
+        cols[2].write(row["verdict"])
+        cols[3].write(row["score"])
 
-        table_html += f"""
-            <tr>
-                <td style='padding:8px; border:1px solid #ddd;'>{row['name']}</td>
-                <td style='padding:8px; border:1px solid #ddd;'>{row['email']}</td>
-                <td style='padding:8px; border:1px solid #ddd;'>{row['verdict']}</td>
-                <td style='padding:8px; border:1px solid #ddd;'>{row['score']}</td>
-                <td style='padding:8px; border:1px solid #ddd;'>
-                    ✅ Select | ❌ Reject | 📩 Missing Info
-                </td>
-            </tr>
-        """
-
-    table_html += "</tbody></table>"
-    st.markdown(table_html, unsafe_allow_html=True)
+        with cols[4]:
+            c1, c2, c3 = st.columns(3)
+            if c1.button("✅", key=f"select_{idx}"):
+                send_selection_email(row["email"], row["name"])
+                st.success(f"Selection email sent to {row['name']}")
+            if c2.button("❌", key=f"reject_{idx}"):
+                send_rejection_email(row["email"], row["name"])
+                st.success(f"Rejection email sent to {row['name']}")
+            if c3.button("📩", key=f"missing_{idx}"):
+                missing_fields = check_missing_info(row)
+                if missing_fields:
+                    send_missing_info_email(row["email"], row["name"], missing_fields)
+                    st.success(f"Missing info email sent to {row['name']}")
+                else:
+                    st.info(f"No missing fields for {row['name']}")
