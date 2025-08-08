@@ -31,7 +31,7 @@ from utils import (
 )
 from backend import get_resume_analysis_async, extract_role_from_jd
 from pdf_utils import generate_summary_pdf
-from email_generator import send_email, check_missing_info, send_missing_info_email, schedule_interview
+from email_generator import send_email, check_missing_info, send_missing_info_email
 # flow = InstalledAppFlow.from_client_secrets_file(
 #     'credentials.json', SCOPES
 # )
