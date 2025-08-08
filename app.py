@@ -34,7 +34,7 @@ from email_generator import send_email, check_missing_info, send_missing_info_em
 from azure.storage.blob import BlobServiceClient
 
 # === Initialize BlobServiceClient once ===
-blob_service_client = BlobServiceClient.from_connection_string(AZURE_CONFIG["blob_connection_string"])
+blob_service_client = BlobServiceClient.from_connection_string(AZURE_CONFIG["connection_string"])
 resumes_container_client = blob_service_client.get_container_client(AZURE_CONFIG["resumes_container"])
 
 # === Function to download all PDF blobs from container ===
