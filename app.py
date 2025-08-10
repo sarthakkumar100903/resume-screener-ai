@@ -426,6 +426,58 @@ if st.session_state["candidate_df"] is not None:
             save_csv_to_blob(export_df, csv_name, AZURE_CONFIG["csv_container"])
             st.download_button("📤 Download CSV", export_df.to_csv(index=False), file_name=csv_name)
 
+    
+    # ====== Custom Title & Theme Styling ======
+    st.set_page_config(page_title="Eazy AI - Resume Screener", layout="wide")
+    
+    st.markdown("""
+        <style>
+        /* Title & Subheading */
+        .main-title {
+            font-size: 40px;
+            font-weight: 800;
+            color: #001F54; /* Navy Blue */
+            text-align: center;
+            margin-bottom: -5px;
+        }
+        .sub-title {
+            font-size: 20px;
+            color: #003366;
+            text-align: center;
+            margin-bottom: 25px;
+            font-style: italic;
+        }
+    
+        /* Sidebar */
+        [data-testid="stSidebar"] {
+            background-color: #E6EEF8;
+        }
+    
+        /* Buttons */
+        div.stButton > button {
+            background-color: #001F54;
+            color: white;
+            border-radius: 8px;
+            height: 40px;
+            font-weight: 600;
+        }
+        div.stButton > button:hover {
+            background-color: #003366;
+            color: white;
+        }
+    
+        /* Info boxes / alerts */
+        .st-bq {
+            background-color: #F0F4FA !important;
+            border-left: 4px solid #001F54 !important;
+        }
+        </style>
+    
+        <div class="main-title">Eazy AI</div>
+        <div class="sub-title">Resume Screener</div>
+    """, unsafe_allow_html=True)
+
+
     # ========== Analytics Tab ==========
     with tabs[3]:
         st.dataframe(df.drop(columns=["resume_text", "embedding"], errors="ignore"))
