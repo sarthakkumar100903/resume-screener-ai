@@ -33,121 +33,43 @@ from email_generator import send_email, check_missing_info, send_missing_info_em
 # === NEW IMPORTS for Azure Blob ===
 from azure.storage.blob import BlobServiceClient
 
-# --- Branding & Page Style ---
-st.set_page_config(page_title="Eazy AI - Resume Screener", page_icon="💡", layout="wide")
-
-# CSS Styling
-st.markdown(
-    """
+# ===========================Design=================================================
+# === Blue & White Theme Styling ===
+st.markdown("""
     <style>
-    @keyframes fadeIn {
-        from { opacity: 0; transform: translateY(-10px); }
-        to { opacity: 1; transform: translateY(0); }
-    }
-
-    /* App background */
+    /* Main background */
     .stApp {
-        background-color: #142155;
-        color: white;
-        animation: fadeIn 0.8s ease-in-out;
+        background-color: #007BFF; /* Deep Blue */
     }
 
-    /* Main headings */
-    .main-title {
-        font-size: 50px;
-        font-weight: bold;
-        color: white;
-        text-align: center;
-        margin-bottom: -10px;
-        animation: fadeIn 1s ease-in-out;
-    }
-    .sub-title {
-        font-size: 24px;
-        color: #B0C4DE;
-        text-align: center;
-        margin-bottom: 40px;
-        animation: fadeIn 1.5s ease-in-out;
-    }
-
-    /* Sidebar full dark background */
+    /* Sidebar background */
     section[data-testid="stSidebar"] {
-        background-color: #142155 !important;
-        color: white !important;
-        height: 100%;
-        animation: fadeIn 1.2s ease-in-out;
+        background-color: #3399FF; /* Lighter Blue */
     }
-    section[data-testid="stSidebar"] label,
-    section[data-testid="stSidebar"] * {
+
+    /* White text for readability */
+    .stApp, .stMarkdown, .stTextInput label, .stSelectbox label, .stSlider label, p, h1, h2, h3, h4, h5, h6 {
         color: white !important;
     }
 
-    /* Fix white gap at bottom of sidebar */
-    div[data-testid="stSidebarContent"] {
-        background-color: #142155 !important;
-        height: 100%;
-    }
-
-    /* Top-N Candidates input */
-    div[data-baseweb="input"] input {
-        background-color: #1C2B4A !important;
-        color: white !important;
-        border: 1px solid #B0C4DE !important;
-    }
-    div[data-baseweb="input"] svg {
-        fill: white !important;
-    }
-
-    /* Sliders */
-    div[data-testid="stSlider"] > div > div > div {
-        background: #B0C4DE;
-    }
-    div[data-testid="stSlider"] > div > div {
-        background: #32456E;
-    }
-
-    /* Buttons */
+    /* White buttons with blue text */
     div.stButton > button {
-        background-color: #32456E;
-        color: white;
+        background-color: white;
+        color: #007BFF;
         border-radius: 8px;
-        padding: 8px 16px;
-        font-size: 16px;
-        border: none;
-        transition: all 0.3s ease;
-    }
-    div.stButton > button:hover {
-        background-color: #435B94;
-        transform: scale(1.05);
+        font-weight: bold;
     }
 
-    /* File uploader */
-    div[data-testid="stFileUploader"] section {
-        background-color: #1C2B4A;
-        color: white;
-        border: 1px dashed #B0C4DE;
+    /* Tabs styling */
+    div[data-baseweb="tab-list"] button {
+        background-color: white;
+        color: #007BFF !important;
         border-radius: 8px;
-        transition: all 0.3s ease;
-    }
-    div[data-testid="stFileUploader"] section:hover {
-        border-color: white;
-        transform: scale(1.02);
+        font-weight: bold;
     }
     </style>
-    """,
-    unsafe_allow_html=True
-)
-
-# --- Single heading section (center only once) ---
-st.markdown(
-    """
-    <div style='text-align: center; padding: 20px;'>
-        <h1 class="main-title">Eazy AI</h1>
-        <h3 class="sub-title">Resume Screener</h3>
-    </div>
-    """,
-    unsafe_allow_html=True
-)
-# ====================================================================================
+""", unsafe_allow_html=True)
+ # ==================================================================
 
 # --- Title & Sub-title ---
 st.markdown("<div class='main-title'>Eazy AI</div>", unsafe_allow_html=True)
