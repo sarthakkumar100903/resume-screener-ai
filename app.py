@@ -33,6 +33,121 @@ from email_generator import send_email, check_missing_info, send_missing_info_em
 # === NEW IMPORTS for Azure Blob ===
 from azure.storage.blob import BlobServiceClient
 
+# --- Branding & Page Style with Staggered Animations ---
+st.set_page_config(page_title="Eazy AI - Resume Screener", page_icon="💡", layout="wide")
+
+# CSS Styling
+st.markdown(
+    """
+    <style>
+    /* Fade-in keyframes */
+    @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(-10px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* App background & text */
+    .stApp {
+        background-color: #142155;
+        color: white;
+        animation: fadeIn 0.8s ease-in-out;
+    }
+
+    /* Headings */
+    .main-title {
+        font-size: 50px;
+        font-weight: bold;
+        color: white;
+        text-align: center;
+        margin-bottom: -10px;
+        animation: fadeIn 1s ease-in-out;
+    }
+    .sub-title {
+        font-size: 24px;
+        color: #B0C4DE;
+        text-align: center;
+        margin-bottom: 40px;
+        animation: fadeIn 1.5s ease-in-out;
+    }
+
+    /* Main content fade-in later */
+    .content-area {
+        animation: fadeIn 2s ease-in-out;
+    }
+
+    /* Sidebar */
+    section[data-testid="stSidebar"] {
+        background-color: #1C2B4A;
+        color: white;
+        animation: fadeIn 1.2s ease-in-out;
+    }
+    section[data-testid="stSidebar"] label {
+        color: white;
+    }
+
+    /* Sliders */
+    div[data-testid="stSlider"] > div > div > div {
+        background: #B0C4DE;
+    }
+    div[data-testid="stSlider"] > div > div {
+        background: #32456E;
+    }
+
+    /* Buttons */
+    div.stButton > button {
+        background-color: #32456E;
+        color: white;
+        border-radius: 8px;
+        padding: 8px 16px;
+        font-size: 16px;
+        border: none;
+        transition: all 0.3s ease;
+    }
+    div.stButton > button:hover {
+        background-color: #435B94;
+        transform: scale(1.05);
+    }
+
+    /* File uploader */
+    div[data-testid="stFileUploader"] section {
+        background-color: #1C2B4A;
+        color: white;
+        border: 1px dashed #B0C4DE;
+        border-radius: 8px;
+        transition: all 0.3s ease;
+    }
+    div[data-testid="stFileUploader"] section:hover {
+        border-color: white;
+        transform: scale(1.02);
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
+# --- Title & Sub-title ---
+st.markdown("<div class='main-title'>Eazy AI</div>", unsafe_allow_html=True)
+st.markdown("<div class='sub-title'>Resume Screener</div>", unsafe_allow_html=True)
+
+# --- Main Content Wrapper ---
+st.markdown("<div class='content-area'>", unsafe_allow_html=True)
+
+# Example placeholder UI (replace with your widgets)
+st.write("📄 Upload your resumes and paste the job description below:")
+
+job_desc = st.text_area("Job Description")
+resume_file = st.file_uploader("Upload Resume(s)", type=["pdf", "docx"])
+
+if st.button("Process"):
+    st.success("Processing complete!")
+
+st.markdown("</div>", unsafe_allow_html=True)
+# ======================================================================================
+
+# Display main title and sub-title (without image)
+st.markdown("<div class='main-title'>Eazy AI</div>", unsafe_allow_html=True)
+st.markdown("<div class='sub-title'>Resume Screener</div>", unsafe_allow_html=True)
+
 # === Initialize BlobServiceClient once ===
 blob_service_client = BlobServiceClient.from_connection_string(AZURE_CONFIG["connection_string"])
 resumes_container_client = blob_service_client.get_container_client(AZURE_CONFIG["resumes_container"])
