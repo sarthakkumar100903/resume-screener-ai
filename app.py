@@ -33,64 +33,38 @@ from email_generator import send_email, check_missing_info, send_missing_info_em
 # === NEW IMPORTS for Azure Blob ===
 from azure.storage.blob import BlobServiceClient
 
-# ===========================Design=================================================
+# ===================DESIGN=============================================================
+import streamlit as st
+
+# === Blue Theme Styling ===
 st.markdown("""
     <style>
-    /* Main background */
     .stApp {
-        background-color: #007BFF; /* Deep Blue */
+        background-color: #007BFF;
     }
-
-    /* Top padding & white border removal */
     header[data-testid="stHeader"] {
-        background-color: #007BFF; /* Blue header */
+        background-color: #007BFF;
     }
-
-    /* Sidebar background */
     section[data-testid="stSidebar"] {
-        background-color: #3399FF; /* Lighter Blue */
+        background-color: #3399FF;
     }
-
-    /* White text for readability */
-    .stApp, .stMarkdown, .stTextInput label, .stSelectbox label, .stSlider label,
-    p, h1, h2, h3, h4, h5, h6 {
+    .stApp, .stMarkdown, p, h1, h2, h3, h4, h5, h6 {
         color: white !important;
     }
-
-    /* White buttons with blue text */
-    div.stButton > button {
-        background-color: white;
-        color: #007BFF;
-        border-radius: 8px;
-        font-weight: bold;
+    .centered-title {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 90vh;
     }
     </style>
 """, unsafe_allow_html=True)
 
- # ==================================================================
+# Main content — ONLY heading
+st.markdown('<div class="centered-title"><h1>Resume Scanner</h1></div>', unsafe_allow_html=True)
 
-# --- Title & Sub-title ---
-st.markdown("<div class='main-title'>Eazy AI</div>", unsafe_allow_html=True)
-st.markdown("<div class='sub-title'>Resume Screener</div>", unsafe_allow_html=True)
 
-# --- Main Content Wrapper ---
-st.markdown("<div class='content-area'>", unsafe_allow_html=True)
-
-# Example placeholder UI (replace with your widgets)
-st.write("📄 Upload your resumes and paste the job description below:")
-
-job_desc = st.text_area("Job Description")
-resume_file = st.file_uploader("Upload Resume(s)", type=["pdf", "docx"])
-
-if st.button("Process"):
-    st.success("Processing complete!")
-
-st.markdown("</div>", unsafe_allow_html=True)
-# ======================================================================================
-
-# Display main title and sub-title (without image)
-st.markdown("<div class='main-title'>Eazy AI</div>", unsafe_allow_html=True)
-st.markdown("<div class='sub-title'>Resume Screener</div>", unsafe_allow_html=True)
+# ==========================================================================================
 
 # === Initialize BlobServiceClient once ===
 blob_service_client = BlobServiceClient.from_connection_string(AZURE_CONFIG["connection_string"])
@@ -502,4 +476,3 @@ if st.session_state["candidate_df"] is not None:
             st.dataframe(flagged[["name", "red_flags", "missing_gaps"]])
         else:
             st.success("✅ No fraud or red flags.")
-
