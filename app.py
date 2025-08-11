@@ -70,19 +70,14 @@ st.markdown(
         animation: fadeIn 1.5s ease-in-out;
     }
 
-    /* Main content fade-in later */
-    .content-area {
-        animation: fadeIn 2s ease-in-out;
-    }
-
     /* Sidebar */
     section[data-testid="stSidebar"] {
-        background-color: #1C2B4A;
+        background-color: #142155;
         color: white;
         animation: fadeIn 1.2s ease-in-out;
     }
-    section[data-testid="stSidebar"] label {
-        color: white;
+    section[data-testid="stSidebar"] * {
+        color: white !important;
     }
 
     /* Sliders */
@@ -121,6 +116,17 @@ st.markdown(
         transform: scale(1.02);
     }
     </style>
+    """,
+    unsafe_allow_html=True
+)
+
+# Single heading at top
+st.markdown(
+    """
+    <div style='text-align: center; padding: 20px;'>
+        <h1 class='main-title'>Eazy AI</h1>
+        <h3 class='sub-title'>Resume Screener</h3>
+    </div>
     """,
     unsafe_allow_html=True
 )
