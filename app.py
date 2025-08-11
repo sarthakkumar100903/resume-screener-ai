@@ -33,27 +33,26 @@ from email_generator import send_email, check_missing_info, send_missing_info_em
 # === NEW IMPORTS for Azure Blob ===
 from azure.storage.blob import BlobServiceClient
 
-# --- Branding & Page Style with Staggered Animations ---
+# --- Branding & Page Style ---
 st.set_page_config(page_title="Eazy AI - Resume Screener", page_icon="💡", layout="wide")
 
 # CSS Styling
 st.markdown(
     """
     <style>
-    /* Fade-in keyframes */
     @keyframes fadeIn {
         from { opacity: 0; transform: translateY(-10px); }
         to { opacity: 1; transform: translateY(0); }
     }
 
-    /* App background & text */
+    /* App background */
     .stApp {
         background-color: #142155;
         color: white;
         animation: fadeIn 0.8s ease-in-out;
     }
 
-    /* Headings */
+    /* Main headings */
     .main-title {
         font-size: 50px;
         font-weight: bold;
@@ -70,14 +69,32 @@ st.markdown(
         animation: fadeIn 1.5s ease-in-out;
     }
 
-    /* Sidebar */
+    /* Sidebar full dark background */
     section[data-testid="stSidebar"] {
-        background-color: #142155;
-        color: white;
+        background-color: #142155 !important;
+        color: white !important;
+        height: 100%;
         animation: fadeIn 1.2s ease-in-out;
     }
+    section[data-testid="stSidebar"] label,
     section[data-testid="stSidebar"] * {
         color: white !important;
+    }
+
+    /* Fix white gap at bottom of sidebar */
+    div[data-testid="stSidebarContent"] {
+        background-color: #142155 !important;
+        height: 100%;
+    }
+
+    /* Top-N Candidates input */
+    div[data-baseweb="input"] input {
+        background-color: #1C2B4A !important;
+        color: white !important;
+        border: 1px solid #B0C4DE !important;
+    }
+    div[data-baseweb="input"] svg {
+        fill: white !important;
     }
 
     /* Sliders */
@@ -120,16 +137,17 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-# Single heading at top
+# --- Single heading section (center only once) ---
 st.markdown(
     """
     <div style='text-align: center; padding: 20px;'>
-        <h1 class='main-title'>Eazy AI</h1>
-        <h3 class='sub-title'>Resume Screener</h3>
+        <h1 class="main-title">Eazy AI</h1>
+        <h3 class="sub-title">Resume Screener</h3>
     </div>
     """,
     unsafe_allow_html=True
 )
+# ====================================================================================
 
 # --- Title & Sub-title ---
 st.markdown("<div class='main-title'>Eazy AI</div>", unsafe_allow_html=True)
