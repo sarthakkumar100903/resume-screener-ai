@@ -33,35 +33,6 @@ from email_generator import send_email, check_missing_info, send_missing_info_em
 # === NEW IMPORTS for Azure Blob ===
 from azure.storage.blob import BlobServiceClient
 
-# ===================DESIGN=============================================================
-st.markdown("""
-    <style>
-    /* Main page background */
-    .stApp {
-        background-color: #142155;
-    }
-    /* Sidebar background */
-    .css-1d391kg, .css-1v3fvcr, .stSidebar, .css-ng1t9b {
-        background-color: #142155 !important;
-    }
-    /* Title section styling */
-    .main-section {
-        color: white;
-        height: 100vh;
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        font-size: 3rem;
-        font-weight: bold;
-    }
-    </style>
-    <div class="main-section">
-        Resume Scanner
-    </div>
-""", unsafe_allow_html=True)
-
-# ==========================================================================================
-
 # === Initialize BlobServiceClient once ===
 blob_service_client = BlobServiceClient.from_connection_string(AZURE_CONFIG["connection_string"])
 resumes_container_client = blob_service_client.get_container_client(AZURE_CONFIG["resumes_container"])
@@ -454,7 +425,6 @@ if st.session_state["candidate_df"] is not None:
             csv_name = f"{verdict}_export_{datetime.datetime.now().strftime('%Y-%m-%d')}.csv"
             save_csv_to_blob(export_df, csv_name, AZURE_CONFIG["csv_container"])
             st.download_button("📤 Download CSV", export_df.to_csv(index=False), file_name=csv_name)
-
 
     # ========== Analytics Tab ==========
     with tabs[3]:
