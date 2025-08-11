@@ -34,11 +34,15 @@ from email_generator import send_email, check_missing_info, send_missing_info_em
 from azure.storage.blob import BlobServiceClient
 
 # ===================DESIGN=============================================================
-# Main content — just a blue section with title
+# Full-page blue background with centered title
 st.markdown("""
     <style>
+    /* Change full page background */
+    .stApp {
+        background-color: #142155;
+    }
+    /* Centered title styling */
     .main-section {
-        background-color: #007BFF;
         color: white;
         height: 100vh;
         display: flex;
@@ -49,7 +53,7 @@ st.markdown("""
     }
     </style>
     <div class="main-section">
-        Resume Scanner
+        Eazy AI
     </div>
 """, unsafe_allow_html=True)
 
