@@ -33,6 +33,37 @@ from email_generator import send_email, check_missing_info, send_missing_info_em
 # === NEW IMPORTS for Azure Blob ===
 from azure.storage.blob import BlobServiceClient
 
+# =========Design==========
+# ----- Custom Theme Styling -----
+st.markdown(
+    """
+    <style>
+    /* Main content background */
+    .stApp {
+        background-color: #001f3f; /* Navy blue */
+    }
+
+    /* Sidebar background */
+    section[data-testid="stSidebar"] {
+        background-color: #001f3f !important;
+    }
+
+    /* Make all text white */
+    html, body, [class*="css"], .stApp, p, div, span, label, h1, h2, h3, h4, h5, h6 {
+        color: white !important;
+    }
+
+    /* Keep containers transparent */
+    .block-container {
+        background-color: transparent !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+# ----- End Custom Theme Styling -----
+
+
 # === Initialize BlobServiceClient once ===
 blob_service_client = BlobServiceClient.from_connection_string(AZURE_CONFIG["connection_string"])
 resumes_container_client = blob_service_client.get_container_client(AZURE_CONFIG["resumes_container"])
