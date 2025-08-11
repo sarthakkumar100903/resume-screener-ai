@@ -34,7 +34,6 @@ from email_generator import send_email, check_missing_info, send_missing_info_em
 from azure.storage.blob import BlobServiceClient
 
 # =========Design==========
-# ----- Custom Theme Styling -----
 st.markdown(
     """
     <style>
@@ -48,20 +47,30 @@ st.markdown(
         background-color: #001f3f !important;
     }
 
-    /* Make all text white */
-    html, body, [class*="css"], .stApp, p, div, span, label, h1, h2, h3, h4, h5, h6 {
+    /* All text white */
+    html, body, [class*="css"], p, div, span, label, h1, h2, h3, h4, h5, h6 {
         color: white !important;
     }
 
-    /* Keep containers transparent */
-    .block-container {
-        background-color: transparent !important;
+    /* Input, text area, and select fields - keep text dark for readability */
+    textarea, input, select {
+        color: black !important;
+    }
+
+    /* Buttons - white text for contrast */
+    button {
+        color: white !important;
+    }
+
+    /* Top white header block to match navy blue */
+    header[data-testid="stHeader"] {
+        background-color: #001f3f !important;
     }
     </style>
     """,
     unsafe_allow_html=True
 )
-# ----- End Custom Theme Styling -----
+# --------------------end theme-------------
 
 
 # === Initialize BlobServiceClient once ===
@@ -87,7 +96,7 @@ if "analysis_done" not in st.session_state:
     st.session_state["analysis_done"] = False
 
 st.set_page_config(layout="wide", page_title="AI Resume Screener")
-st.markdown("<h1 style='text-align:center;'>🤖 AI Resume Screener</h1>", unsafe_allow_html=True)
+st.markdown("<h1 style='text-align:center;'>Eazy AI</h1><br><h3>Resume Screener</h3>", unsafe_allow_html=True)
 st.markdown("---")
 
 # ========== Sidebar Inputs ==========
