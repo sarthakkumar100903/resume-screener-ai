@@ -34,12 +34,16 @@ from email_generator import send_email, check_missing_info, send_missing_info_em
 from azure.storage.blob import BlobServiceClient
 
 # ===========================Design=================================================
-# === Blue & White Theme Styling ===
 st.markdown("""
     <style>
     /* Main background */
     .stApp {
         background-color: #007BFF; /* Deep Blue */
+    }
+
+    /* Top padding & white border removal */
+    header[data-testid="stHeader"] {
+        background-color: #007BFF; /* Blue header */
     }
 
     /* Sidebar background */
@@ -48,7 +52,8 @@ st.markdown("""
     }
 
     /* White text for readability */
-    .stApp, .stMarkdown, .stTextInput label, .stSelectbox label, .stSlider label, p, h1, h2, h3, h4, h5, h6 {
+    .stApp, .stMarkdown, .stTextInput label, .stSelectbox label, .stSlider label,
+    p, h1, h2, h3, h4, h5, h6 {
         color: white !important;
     }
 
@@ -59,16 +64,9 @@ st.markdown("""
         border-radius: 8px;
         font-weight: bold;
     }
-
-    /* Tabs styling */
-    div[data-baseweb="tab-list"] button {
-        background-color: white;
-        color: #007BFF !important;
-        border-radius: 8px;
-        font-weight: bold;
-    }
     </style>
 """, unsafe_allow_html=True)
+
  # ==================================================================
 
 # --- Title & Sub-title ---
