@@ -34,14 +34,17 @@ from email_generator import send_email, check_missing_info, send_missing_info_em
 from azure.storage.blob import BlobServiceClient
 
 # ===================DESIGN=============================================================
-# Full-page blue background with centered title
 st.markdown("""
     <style>
-    /* Change full page background */
+    /* Main page background */
     .stApp {
         background-color: #142155;
     }
-    /* Centered title styling */
+    /* Sidebar background */
+    .css-1d391kg, .css-1v3fvcr {  /* sidebar container classes in Streamlit */
+        background-color: #142155;
+    }
+    /* Title section styling */
     .main-section {
         color: white;
         height: 100vh;
@@ -53,10 +56,9 @@ st.markdown("""
     }
     </style>
     <div class="main-section">
-        Eazy AI
+        Resume Scanner
     </div>
 """, unsafe_allow_html=True)
-
 
 # ==========================================================================================
 
