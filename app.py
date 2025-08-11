@@ -347,7 +347,7 @@ if st.session_state["candidate_df"] is not None:
                                 st.warning(f"❗ Missing: {', '.join(missing)}")
 
                             # Email logic
-                            if st.button(f"✉️ Send Request for Info - {row['email']}", key=f"underreview_{i}"):
+                            if st.button(f"✉️ Send Request for Info - {row['email']}", key=f"underreview_{i}_{row['email']}"):   #change 
                                 send_missing_info_email(row['email'], missing)  # You must define this function
                                 st.success("Email sent.")
                     
