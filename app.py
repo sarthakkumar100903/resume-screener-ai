@@ -34,34 +34,24 @@ from email_generator import send_email, check_missing_info, send_missing_info_em
 from azure.storage.blob import BlobServiceClient
 
 # ===================DESIGN=============================================================
-import streamlit as st
-
-# === Blue Theme Styling ===
+# Main content — just a blue section with title
 st.markdown("""
     <style>
-    .stApp {
+    .main-section {
         background-color: #007BFF;
-    }
-    header[data-testid="stHeader"] {
-        background-color: #007BFF;
-    }
-    section[data-testid="stSidebar"] {
-        background-color: #3399FF;
-    }
-    .stApp, .stMarkdown, p, h1, h2, h3, h4, h5, h6 {
-        color: white !important;
-    }
-    .centered-title {
+        color: white;
+        height: 100vh;
         display: flex;
         justify-content: center;
         align-items: center;
-        height: 90vh;
+        font-size: 3rem;
+        font-weight: bold;
     }
     </style>
+    <div class="main-section">
+        Resume Scanner
+    </div>
 """, unsafe_allow_html=True)
-
-# Main content — ONLY heading
-st.markdown('<div class="centered-title"><h1>Resume Scanner</h1></div>', unsafe_allow_html=True)
 
 
 # ==========================================================================================
