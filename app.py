@@ -426,6 +426,8 @@ if st.session_state["candidate_df"] is not None:
             save_csv_to_blob(export_df, csv_name, AZURE_CONFIG["csv_container"])
             st.download_button("📤 Download CSV", export_df.to_csv(index=False), file_name=csv_name)
 
+  
+
     # ========== Analytics Tab ==========
     with tabs[3]:
         st.dataframe(df.drop(columns=["resume_text", "embedding"], errors="ignore"))
