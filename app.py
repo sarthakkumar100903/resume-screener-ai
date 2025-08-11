@@ -57,10 +57,22 @@ st.markdown(
         color: black !important;
     }
 
-    /* Buttons - white text for contrast */
-    button {
+    /* Make Analyze button navy with white text */
+    div.stButton > button:first-child {
+        background-color: navy !important;
+        color: white !important;
+        border: none !important;
+    }
+    div.stButton > button:first-child:hover {
+        background-color: #000080cc !important; /* Slightly lighter navy */
         color: white !important;
     }
+
+    /* Make upload box text blue */
+    section[data-testid="stFileUploader"] div div {
+        color: blue !important;
+    }
+
 
     /* Top white header block to match navy blue */
     header[data-testid="stHeader"] {
@@ -96,7 +108,7 @@ if "analysis_done" not in st.session_state:
     st.session_state["analysis_done"] = False
 
 st.set_page_config(layout="wide", page_title="AI Resume Screener")
-st.markdown("<h1 style='text-align:center;'>Eazy AI</h1><br><h3>Resume Screener</h3>", unsafe_allow_html=True)
+st.markdown("<h1 style='text-align:center;'>Eazy AI</h1><br><h3 style='text-align:center;'>Resume Screener</h3>", unsafe_allow_html=True)
 st.markdown("---")
 
 # ========== Sidebar Inputs ==========
