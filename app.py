@@ -41,8 +41,8 @@ st.markdown("""
         background-color: #142155;
     }
     /* Sidebar background */
-    .css-1d391kg, .css-1v3fvcr {  /* sidebar container classes in Streamlit */
-        background-color: #142155;
+    .css-1d391kg, .css-1v3fvcr, .stSidebar, .css-ng1t9b {
+        background-color: #142155 !important;
     }
     /* Title section styling */
     .main-section {
