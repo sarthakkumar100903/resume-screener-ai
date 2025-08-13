@@ -231,6 +231,9 @@ def initialize_session_state():
         st.session_state["analysis_done"] = False
     if "processing_metrics" not in st.session_state:
         st.session_state["processing_metrics"] = {}
+    # Initialize candidate notes and verdicts tracking
+    if "candidate_updates" not in st.session_state:
+        st.session_state["candidate_updates"] = {}
 
 initialize_session_state()
 
@@ -564,7 +567,7 @@ if st.session_state["candidate_df"] is not None:
         "📊 Analytics Dashboard"
     ])
 
-    # Function to render candidate cards with fixed styling
+    # Function to render candidate cards with improved session state handling
     def render_candidate_card(row, verdict, idx):
         with st.container():
             st.markdown('<div class="candidate-card">', unsafe_allow_html=True)
@@ -618,17 +621,17 @@ if st.session_state["candidate_df"] is not None:
                     st.metric("Final Score", f"{safe_get_score('score')}%")
 
             with col2:
-                # Action buttons with unique keys to avoid conflicts
+                # Action buttons with proper unique keys
                 st.markdown("### 🎬 Actions")
                 
-                # Generate unique keys using row index and timestamp
-                unique_id = f"{verdict}_{candidate_name.replace(' ', '_')}_{idx}_{int(time.time() * 1000) % 10000}"
+                # Create a unique candidate identifier
+                candidate_id = f"{candidate_name}_{idx}_{hash(str(row))}"[:50].replace(" ", "_")
                 
-                # Email button with better error handling
-                email_btn_key = f"email_btn_{unique_id}"
-                if st.button(f"✉️ Send Email", key=email_btn_key, type="primary"):
-                    email = row.get('email', '').strip()
-                    if email and email not in ['N/A', '', 'nan', 'None']:
+                # Email button
+                email_key = f"email_{candidate_id}"
+                if st.button(f"✉️ Send Email", key=email_key, type="primary"):
+                    email_addr = row.get('email', '').strip()
+                    if email_addr and email_addr not in ['N/A', '', 'nan', 'None']:
                         # Get role for email template
                         current_role = role if role != "N/A" else "this position"
                         
@@ -680,9 +683,8 @@ EazyAI Recruitment Team"""
                         
                         try:
                             with st.spinner("Sending email..."):
-                                if send_email(email, subject, body):
+                                if send_email(email_addr, subject, body):
                                     st.success("✅ Email sent successfully!")
-                                    time.sleep(1)  # Brief pause to show success message
                                 else:
                                     st.error("❌ Failed to send email - please check email configuration")
                         except Exception as e:
@@ -691,9 +693,9 @@ EazyAI Recruitment Team"""
                     else:
                         st.error("❌ No valid email address available")
 
-                # Download summary with better error handling
-                summary_btn_key = f"summary_btn_{unique_id}"
-                if st.button(f"📄 Generate Summary", key=summary_btn_key):
+                # Download summary button
+                summary_key = f"summary_{candidate_id}"
+                if st.button(f"📄 Generate Summary", key=summary_key):
                     try:
                         with st.spinner("Generating PDF summary..."):
                             # Ensure all required fields are present for PDF generation
@@ -742,22 +744,23 @@ EazyAI Recruitment Team"""
             # Interactive elements for status updates and notes
             st.markdown("### 📝 Recruiter Actions")
             
-            # Unique keys for input elements
-            note_key = f"note_{unique_id}"
-            verdict_key = f"verdict_{unique_id}"
+            # Create unique keys for interactive elements
+            note_key = f"note_{candidate_id}"
+            verdict_key = f"verdict_{candidate_id}"
             
-            # Initialize session state for this candidate if not exists
-            if note_key not in st.session_state:
-                st.session_state[note_key] = row.get("recruiter_notes", "")
-            if verdict_key not in st.session_state:
-                st.session_state[verdict_key] = row.get("verdict", verdict)
+            # Use candidate updates from session state to avoid direct DataFrame modification
+            if candidate_id not in st.session_state["candidate_updates"]:
+                st.session_state["candidate_updates"][candidate_id] = {
+                    "notes": row.get("recruiter_notes", ""),
+                    "verdict": row.get("verdict", verdict)
+                }
 
             col_note, col_verdict = st.columns(2)
             
             with col_note:
                 new_note = st.text_area(
                     "Recruiter Notes", 
-                    value=st.session_state[note_key], 
+                    value=st.session_state["candidate_updates"][candidate_id]["notes"], 
                     key=note_key,
                     height=100
                 )
@@ -766,26 +769,26 @@ EazyAI Recruitment Team"""
                 new_verdict = st.selectbox(
                     "Update Status", 
                     ["shortlist", "review", "reject"],
-                    index=["shortlist", "review", "reject"].index(st.session_state[verdict_key]),
+                    index=["shortlist", "review", "reject"].index(
+                        st.session_state["candidate_updates"][candidate_id]["verdict"]
+                    ),
                     key=verdict_key
                 )
 
-            # Update dataframe if values changed
-            if hasattr(row, 'name') and row.name in df.index:
-                current_idx = row.name
-            else:
-                # Fallback to finding by candidate name
-                try:
-                    current_idx = df[df['name'] == candidate_name].index[0]
-                except (IndexError, KeyError):
-                    current_idx = idx
+            # Update session state
+            st.session_state["candidate_updates"][candidate_id]["notes"] = new_note
+            st.session_state["candidate_updates"][candidate_id]["verdict"] = new_verdict
             
-            if current_idx in df.index:
-                df.at[current_idx, "recruiter_notes"] = new_note
-                df.at[current_idx, "verdict"] = new_verdict
-                # Update session state
-                st.session_state[note_key] = new_note
-                st.session_state[verdict_key] = new_verdict
+            # Apply updates to the main dataframe
+            try:
+                # Find the row index in the dataframe
+                mask = (df['name'] == candidate_name) & (df['email'] == email)
+                if mask.any():
+                    idx_in_df = df[mask].index[0]
+                    df.at[idx_in_df, "recruiter_notes"] = new_note
+                    df.at[idx_in_df, "verdict"] = new_verdict
+            except Exception as e:
+                logger.warning(f"Could not update dataframe for {candidate_name}: {str(e)}")
 
             st.markdown('</div>', unsafe_allow_html=True)
             st.markdown("---")
@@ -802,7 +805,7 @@ EazyAI Recruitment Team"""
             # Bulk actions for rejected candidates
             if verdict == "reject" and len(filtered) > 0:
                 st.markdown("### 📧 Bulk Actions")
-                bulk_email_key = f"bulk_email_{verdict}_{int(time.time() * 1000) % 10000}"
+                bulk_email_key = f"bulk_email_{verdict}"
                 if st.button(f"📬 Send Bulk Rejection Emails ({len(filtered)} candidates)", 
                            key=bulk_email_key, type="secondary"):
                     sent_count = 0
@@ -864,7 +867,7 @@ EazyAI Recruitment Team"""
                 
                 col1, col2 = st.columns(2)
                 with col1:
-                    csv_download_key = f"csv_download_{verdict}_{int(time.time() * 1000) % 10000}"
+                    csv_download_key = f"csv_download_{verdict}"
                     csv_data = export_df.to_csv(index=False)
                     st.download_button(
                         "📊 Download CSV", 
@@ -874,7 +877,7 @@ EazyAI Recruitment Team"""
                         key=csv_download_key
                     )
                 with col2:
-                    blob_save_key = f"blob_save_{verdict}_{int(time.time() * 1000) % 10000}"
+                    blob_save_key = f"blob_save_{verdict}"
                     if st.button(f"☁️ Save to Blob", key=blob_save_key):
                         try:
                             with st.spinner("Saving to Azure Blob..."):
