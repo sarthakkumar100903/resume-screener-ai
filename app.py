@@ -34,7 +34,7 @@ from email_generator import send_email, check_missing_info, send_missing_info_em
 # Azure Blob Storage
 from azure.storage.blob import BlobServiceClient
 
-# Enhanced Design with fixed styling
+# Enhanced Design with fixed light mode styling
 st.markdown(
     """
     <style>
@@ -45,9 +45,19 @@ st.markdown(
         font-family: 'Inter', sans-serif;
     }
 
+    /* Light mode compatibility */
+    [data-theme="light"] .stApp {
+        background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 50%, #f1f5f9 100%);
+    }
+
     section[data-testid="stSidebar"] {
         background: linear-gradient(180deg, #1e2a3a 0%, #0f1419 100%) !important;
         border-right: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    [data-theme="light"] section[data-testid="stSidebar"] {
+        background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%) !important;
+        border-right: 1px solid rgba(0, 0, 0, 0.1);
     }
 
     .main-title {
@@ -70,6 +80,10 @@ st.markdown(
         margin-bottom: 2rem;
     }
 
+    [data-theme="light"] .subtitle {
+        color: #475569;
+    }
+
     .candidate-card {
         background: linear-gradient(135deg, rgba(30, 42, 58, 0.8) 0%, rgba(15, 20, 25, 0.9) 100%);
         border: 1px solid rgba(255, 255, 255, 0.1);
@@ -79,6 +93,14 @@ st.markdown(
         box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
         backdrop-filter: blur(10px);
         transition: all 0.3s ease;
+        color: #e2e8f0;
+    }
+
+    [data-theme="light"] .candidate-card {
+        background: linear-gradient(135deg, rgba(255, 255, 255, 0.9) 0%, rgba(248, 250, 252, 0.9) 100%);
+        border: 1px solid rgba(0, 0, 0, 0.1);
+        color: #1e293b;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
     }
 
     .candidate-card:hover {
@@ -93,6 +115,13 @@ st.markdown(
         padding: 1rem;
         text-align: center;
         border: 1px solid rgba(255, 255, 255, 0.1);
+        color: #e2e8f0;
+    }
+
+    [data-theme="light"] .metric-container {
+        background: rgba(255, 255, 255, 0.8);
+        border: 1px solid rgba(0, 0, 0, 0.1);
+        color: #1e293b;
     }
 
     .status-shortlist {
@@ -128,6 +157,12 @@ st.markdown(
         border-radius: 8px;
         margin: 1rem 0;
         border-left: 3px solid #00d4ff;
+        color: #e2e8f0;
+    }
+
+    [data-theme="light"] .sidebar-section {
+        background: rgba(0, 212, 255, 0.1);
+        color: #1e293b;
     }
 
     .performance-metrics {
@@ -136,6 +171,36 @@ st.markdown(
         border-radius: 12px;
         padding: 1rem;
         margin: 1rem 0;
+        color: #e2e8f0;
+    }
+
+    [data-theme="light"] .performance-metrics {
+        color: #1e293b;
+    }
+
+    .candidate-name {
+        color: #e2e8f0;
+        font-weight: 600;
+    }
+
+    [data-theme="light"] .candidate-name {
+        color: #1e293b;
+    }
+
+    .candidate-contact {
+        color: #94a3b8;
+    }
+
+    [data-theme="light"] .candidate-contact {
+        color: #64748b;
+    }
+
+    .candidate-fitment {
+        color: #cbd5e1;
+    }
+
+    [data-theme="light"] .candidate-fitment {
+        color: #475569;
     }
 
     .stButton > button {
@@ -499,7 +564,7 @@ if st.session_state["candidate_df"] is not None:
         "📊 Analytics Dashboard"
     ])
 
-    # Function to render candidate cards
+    # Function to render candidate cards with fixed styling
     def render_candidate_card(row, verdict, idx):
         with st.container():
             st.markdown('<div class="candidate-card">', unsafe_allow_html=True)
@@ -510,109 +575,169 @@ if st.session_state["candidate_df"] is not None:
             with col1:
                 # Candidate name with status badge
                 status_class = f"status-{verdict}"
+                candidate_name = row.get('name', 'Unknown')
                 st.markdown(f"""
-                <h3>👤 {row['name']} <span class="{status_class}">{verdict.upper()}</span></h3>
+                <div class="candidate-name">
+                    <h3>👤 {candidate_name} <span class="{status_class}">{verdict.upper()}</span></h3>
+                </div>
                 """, unsafe_allow_html=True)
                 
-                # Contact info
-                st.markdown(f"📧 **{row.get('email', 'N/A')}** | 📞 **{row.get('phone', 'N/A')}**")
+                # Contact info - with proper fallbacks
+                email = row.get('email', 'N/A')
+                phone = row.get('phone', 'N/A')
+                st.markdown(f'<div class="candidate-contact">📧 <strong>{email}</strong> | 📞 <strong>{phone}</strong></div>', unsafe_allow_html=True)
                 
-                # Fitment summary
-                st.markdown(f"💡 **Fitment:** {row.get('fitment', 'N/A')}")
+                # Fitment summary - with proper fallback and truncation
+                fitment = row.get('fitment', 'N/A')
+                if pd.isna(fitment) or fitment == '' or fitment == 'None':
+                    fitment = 'Analysis pending'
+                # Truncate long fitment text
+                if len(str(fitment)) > 200:
+                    fitment = str(fitment)[:200] + "..."
+                st.markdown(f'<div class="candidate-fitment">💡 <strong>Fitment:</strong> {fitment}</div>', unsafe_allow_html=True)
                 
-                # Score metrics with visual indicators
+                # Score metrics with visual indicators - with proper fallbacks
                 col_jd, col_skills, col_domain, col_exp, col_final = st.columns(5)
+                
+                def safe_get_score(key, default=0):
+                    value = row.get(key, default)
+                    try:
+                        return int(float(value)) if pd.notna(value) else default
+                    except (ValueError, TypeError):
+                        return default
+                
                 with col_jd:
-                    st.metric("JD Match", f"{row['jd_similarity']}%")
+                    st.metric("JD Match", f"{safe_get_score('jd_similarity')}%")
                 with col_skills:
-                    st.metric("Skills", f"{row['skills_match']}%")
+                    st.metric("Skills", f"{safe_get_score('skills_match')}%")
                 with col_domain:
-                    st.metric("Domain", f"{row['domain_match']}%")
+                    st.metric("Domain", f"{safe_get_score('domain_match')}%")
                 with col_exp:
-                    st.metric("Experience", f"{row['experience_match']}%")
+                    st.metric("Experience", f"{safe_get_score('experience_match')}%")
                 with col_final:
-                    st.metric("Final Score", f"{row['score']}%")
+                    st.metric("Final Score", f"{safe_get_score('score')}%")
 
             with col2:
                 # Action buttons with unique keys to avoid conflicts
                 st.markdown("### 🎬 Actions")
                 
                 # Generate unique keys using row index and timestamp
-                unique_id = f"{verdict}_{row.name if hasattr(row, 'name') else idx}_{int(time.time() * 1000)}"
+                unique_id = f"{verdict}_{candidate_name.replace(' ', '_')}_{idx}_{int(time.time() * 1000) % 10000}"
                 
-                # Email button
+                # Email button with better error handling
                 email_btn_key = f"email_btn_{unique_id}"
                 if st.button(f"✉️ Send Email", key=email_btn_key, type="primary"):
-                    email = row.get('email', '')
-                    if email and email != 'N/A':
+                    email = row.get('email', '').strip()
+                    if email and email not in ['N/A', '', 'nan', 'None']:
+                        # Get role for email template
+                        current_role = role if role != "N/A" else "this position"
+                        
                         # Email templates based on verdict
                         if verdict == "shortlist":
-                            subject = "Congratulations! You've been shortlisted"
-                            body = f"""Dear {row['name']},
+                            subject = f"Congratulations! You've been shortlisted for {current_role}"
+                            highlights = row.get('highlights', [])
+                            highlights_text = ""
+                            if highlights and isinstance(highlights, list) and len(highlights) > 0:
+                                highlights_text = "• " + "\n• ".join(highlights[:3])
+                            else:
+                                highlights_text = "• Your qualifications and experience"
+                            
+                            body = f"""Dear {candidate_name},
 
-Congratulations! After reviewing your application for the {role} position, we are pleased to inform you that you have been shortlisted for the next round.
+Congratulations! After reviewing your application for the {current_role} position, we are pleased to inform you that you have been shortlisted for the next round.
 
-Our team was impressed with your qualifications and experience. We will be in touch soon with details about the next steps in our selection process.
+Our team was impressed with your qualifications and experience, particularly:
+{highlights_text}
+
+We will be in touch soon with details about the next steps in our selection process.
 
 Best regards,
-Recruitment Team"""
+EazyAI Recruitment Team"""
                         
                         elif verdict == "review":
-                            subject = "Application Under Review"
-                            body = f"""Dear {row['name']},
+                            subject = f"Application Under Review - {current_role}"
+                            body = f"""Dear {candidate_name},
 
-Thank you for your application for the {role} position. 
+Thank you for your application for the {current_role} position. 
 
 Your profile is currently under review by our recruitment team. We may need some additional information to proceed and will be in touch shortly.
 
 Thank you for your patience during this process.
 
 Best regards,
-Recruitment Team"""
+EazyAI Recruitment Team"""
                         
                         else:  # reject
-                            subject = "Application Status Update"
-                            body = f"""Dear {row['name']},
+                            subject = f"Application Status Update - {current_role}"
+                            body = f"""Dear {candidate_name},
 
-Thank you for your interest in our {role} position. After careful consideration, we have decided not to proceed with your application at this time.
+Thank you for your interest in our {current_role} position. After careful consideration, we have decided not to proceed with your application at this time.
 
 We appreciate the time you invested in the application process and wish you success in your future endeavors.
 
 Best regards,
-Recruitment Team"""
+EazyAI Recruitment Team"""
                         
                         try:
-                            if send_email(email, subject, body):
-                                st.success("✅ Email sent successfully!")
-                            else:
-                                st.error("❌ Failed to send email")
+                            with st.spinner("Sending email..."):
+                                if send_email(email, subject, body):
+                                    st.success("✅ Email sent successfully!")
+                                    time.sleep(1)  # Brief pause to show success message
+                                else:
+                                    st.error("❌ Failed to send email - please check email configuration")
                         except Exception as e:
                             st.error(f"❌ Email error: {str(e)}")
+                            logger.error(f"Email sending error: {str(e)}")
                     else:
-                        st.error("❌ No valid email address")
+                        st.error("❌ No valid email address available")
 
-                # Download summary
+                # Download summary with better error handling
                 summary_btn_key = f"summary_btn_{unique_id}"
                 if st.button(f"📄 Generate Summary", key=summary_btn_key):
                     try:
-                        pdf_bytes = generate_summary_pdf(row)
-                        summary_name = f"{row['name'].replace(' ', '_')}_Summary.pdf"
-                        
-                        # Save to Azure Blob
-                        save_summary_to_blob(pdf_bytes, summary_name, AZURE_CONFIG["summaries_container"])
-                        
-                        # Provide download link
-                        b64 = base64.b64encode(pdf_bytes).decode()
-                        st.markdown(f'''
-                        <a href="data:application/octet-stream;base64,{b64}" 
-                           download="{summary_name}" 
-                           style="color: #00d4ff; text-decoration: none;">
-                           📥 Download Summary PDF
-                        </a>
-                        ''', unsafe_allow_html=True)
-                        st.success("✅ Summary generated and saved to Azure Blob!")
+                        with st.spinner("Generating PDF summary..."):
+                            # Ensure all required fields are present for PDF generation
+                            pdf_data = {
+                                "name": candidate_name,
+                                "email": email,
+                                "phone": phone,
+                                "jd_role": row.get('jd_role', role),
+                                "score": safe_get_score('score'),
+                                "verdict": verdict,
+                                "jd_similarity": safe_get_score('jd_similarity'),
+                                "skills_match": safe_get_score('skills_match'),
+                                "domain_match": safe_get_score('domain_match'),
+                                "experience_match": safe_get_score('experience_match'),
+                                "fitment": fitment,
+                                "summary_5_lines": row.get('summary_5_lines', 'Summary not available'),
+                                "highlights": row.get('highlights', []),
+                                "red_flags": row.get('red_flags', []),
+                                "missing_gaps": row.get('missing_gaps', []),
+                                "reasons_if_rejected": row.get('reasons_if_rejected', []),
+                                "recommendation": row.get('recommendation', ''),
+                                "recruiter_notes": row.get('recruiter_notes', ''),
+                                "fraud_detected": row.get('fraud_detected', False)
+                            }
+                            
+                            pdf_bytes = generate_summary_pdf(pdf_data)
+                            summary_name = f"{candidate_name.replace(' ', '_')}_Summary.pdf"
+                            
+                            # Save to Azure Blob
+                            save_summary_to_blob(pdf_bytes, summary_name, AZURE_CONFIG["summaries_container"])
+                            
+                            # Provide download link
+                            b64 = base64.b64encode(pdf_bytes).decode()
+                            st.markdown(f'''
+                            <a href="data:application/octet-stream;base64,{b64}" 
+                               download="{summary_name}" 
+                               style="color: #00d4ff; text-decoration: none; font-weight: bold;">
+                               📥 Download Summary PDF
+                            </a>
+                            ''', unsafe_allow_html=True)
+                            st.success("✅ Summary generated and saved to Azure Blob!")
                     except Exception as e:
                         st.error(f"❌ Summary generation failed: {str(e)}")
+                        logger.error(f"PDF generation error for {candidate_name}: {str(e)}")
 
             # Interactive elements for status updates and notes
             st.markdown("### 📝 Recruiter Actions")
@@ -621,7 +746,7 @@ Recruitment Team"""
             note_key = f"note_{unique_id}"
             verdict_key = f"verdict_{unique_id}"
             
-            # Initialize session state for this candidate
+            # Initialize session state for this candidate if not exists
             if note_key not in st.session_state:
                 st.session_state[note_key] = row.get("recruiter_notes", "")
             if verdict_key not in st.session_state:
@@ -646,10 +771,21 @@ Recruitment Team"""
                 )
 
             # Update dataframe if values changed
-            current_idx = row.name if hasattr(row, 'name') else idx
+            if hasattr(row, 'name') and row.name in df.index:
+                current_idx = row.name
+            else:
+                # Fallback to finding by candidate name
+                try:
+                    current_idx = df[df['name'] == candidate_name].index[0]
+                except (IndexError, KeyError):
+                    current_idx = idx
+            
             if current_idx in df.index:
                 df.at[current_idx, "recruiter_notes"] = new_note
                 df.at[current_idx, "verdict"] = new_verdict
+                # Update session state
+                st.session_state[note_key] = new_note
+                st.session_state[verdict_key] = new_verdict
 
             st.markdown('</div>', unsafe_allow_html=True)
             st.markdown("---")
@@ -657,7 +793,7 @@ Recruitment Team"""
     # Process each verdict tab
     for verdict, tab in zip(["shortlist", "review", "reject"], tabs[:3]):
         with tab:
-            filtered = df[df["verdict"] == verdict]
+            filtered = df[df["verdict"] == verdict].copy()
             
             if len(filtered) == 0:
                 st.info(f"No candidates in {verdict} category")
@@ -666,7 +802,7 @@ Recruitment Team"""
             # Bulk actions for rejected candidates
             if verdict == "reject" and len(filtered) > 0:
                 st.markdown("### 📧 Bulk Actions")
-                bulk_email_key = f"bulk_email_{verdict}_{int(time.time())}"
+                bulk_email_key = f"bulk_email_{verdict}_{int(time.time() * 1000) % 10000}"
                 if st.button(f"📬 Send Bulk Rejection Emails ({len(filtered)} candidates)", 
                            key=bulk_email_key, type="secondary"):
                     sent_count = 0
@@ -675,31 +811,36 @@ Recruitment Team"""
                     progress = st.progress(0)
                     status = st.empty()
                     
+                    current_role = role if role != "N/A" else "this position"
+                    
                     for idx, (_, row) in enumerate(filtered.iterrows()):
                         progress.progress((idx + 1) / len(filtered))
-                        status.text(f"Sending email to {row['name']}...")
+                        candidate_name = row.get('name', 'Candidate')
+                        status.text(f"Sending email to {candidate_name}...")
                         
-                        email = row.get('email', '')
-                        if email and email != 'N/A':
-                            subject = "Application Status Update"
-                            body = f"""Dear {row['name']},
+                        email_addr = row.get('email', '').strip()
+                        if email_addr and email_addr not in ['N/A', '', 'nan', 'None']:
+                            subject = f"Application Status Update - {current_role}"
+                            body = f"""Dear {candidate_name},
 
-Thank you for your interest in our {role} position. After careful consideration, we have decided not to proceed with your application at this time.
+Thank you for your interest in our {current_role} position. After careful consideration, we have decided not to proceed with your application at this time.
 
 We appreciate the time you invested in the application process and wish you success in your future endeavors.
 
 Best regards,
-Recruitment Team"""
+EazyAI Recruitment Team"""
                             
                             try:
-                                if send_email(email, subject, body):
+                                if send_email(email_addr, subject, body):
                                     sent_count += 1
                                 else:
                                     failed_count += 1
-                            except:
+                            except Exception as e:
+                                logger.error(f"Bulk email error for {candidate_name}: {str(e)}")
                                 failed_count += 1
                         else:
                             failed_count += 1
+                            logger.warning(f"No valid email for {candidate_name}")
                     
                     progress.empty()
                     status.empty()
@@ -707,7 +848,7 @@ Recruitment Team"""
                     if sent_count > 0:
                         st.success(f"✅ Successfully sent {sent_count} rejection emails")
                     if failed_count > 0:
-                        st.warning(f"⚠️ Failed to send {failed_count} emails")
+                        st.warning(f"⚠️ Failed to send {failed_count} emails (check email addresses and configuration)")
                 
                 st.markdown("---")
 
@@ -723,22 +864,25 @@ Recruitment Team"""
                 
                 col1, col2 = st.columns(2)
                 with col1:
-                    csv_download_key = f"csv_download_{verdict}_{int(time.time())}"
+                    csv_download_key = f"csv_download_{verdict}_{int(time.time() * 1000) % 10000}"
+                    csv_data = export_df.to_csv(index=False)
                     st.download_button(
                         "📊 Download CSV", 
-                        export_df.to_csv(index=False),
+                        csv_data,
                         file_name=csv_name,
                         mime="text/csv",
                         key=csv_download_key
                     )
                 with col2:
-                    blob_save_key = f"blob_save_{verdict}_{int(time.time())}"
+                    blob_save_key = f"blob_save_{verdict}_{int(time.time() * 1000) % 10000}"
                     if st.button(f"☁️ Save to Blob", key=blob_save_key):
                         try:
-                            save_csv_to_blob(export_df, csv_name, AZURE_CONFIG["csv_container"])
-                            st.success("✅ Saved to Azure Blob!")
+                            with st.spinner("Saving to Azure Blob..."):
+                                save_csv_to_blob(export_df, csv_name, AZURE_CONFIG["csv_container"])
+                                st.success("✅ Saved to Azure Blob!")
                         except Exception as e:
                             st.error(f"❌ Failed to save to blob: {str(e)}")
+                            logger.error(f"Blob save error: {str(e)}")
 
     # Analytics Dashboard Tab
     with tabs[3]:
@@ -787,18 +931,39 @@ Recruitment Team"""
         with col2:
             st.markdown("#### 📊 Score Distribution by Category")
             score_cols = ["jd_similarity", "skills_match", "domain_match", "experience_match"]
-            score_data = df[score_cols + ['score']].copy()
-            score_data.columns = ['JD Similarity', 'Skills Match', 'Domain Match', 'Experience Match', 'Final Score']
+            available_cols = [col for col in score_cols if col in df.columns]
             
-            # Show average scores
-            avg_scores = score_data.mean()
-            st.dataframe(avg_scores.to_frame('Average Score'), use_container_width=True)
+            if available_cols:
+                score_data = df[available_cols + ['score']].copy()
+                score_data.columns = [col.replace('_', ' ').title() for col in available_cols] + ['Final Score']
+                
+                # Show average scores
+                avg_scores = score_data.mean()
+                st.dataframe(avg_scores.to_frame('Average Score'), use_container_width=True)
             
             # Top performers
             st.markdown("#### 🏆 Top 5 Candidates")
-            top_candidates = df.nlargest(5, 'score')[['name', 'score', 'verdict', 'jd_similarity', 'skills_match']]
-            top_candidates.columns = ['Name', 'Score', 'Status', 'JD Match', 'Skills Match']
-            st.dataframe(top_candidates, hide_index=True, use_container_width=True)
+            display_cols = ['name', 'score', 'verdict']
+            if 'jd_similarity' in df.columns:
+                display_cols.append('jd_similarity')
+            if 'skills_match' in df.columns:
+                display_cols.append('skills_match')
+            
+            available_display_cols = [col for col in display_cols if col in df.columns]
+            if available_display_cols:
+                top_candidates = df.nlargest(5, 'score')[available_display_cols]
+                # Rename columns for display
+                column_names = []
+                for col in available_display_cols:
+                    if col == 'jd_similarity':
+                        column_names.append('JD Match')
+                    elif col == 'skills_match':
+                        column_names.append('Skills Match')
+                    else:
+                        column_names.append(col.replace('_', ' ').title())
+                
+                top_candidates.columns = column_names
+                st.dataframe(top_candidates, hide_index=True, use_container_width=True)
 
         # Threshold analysis
         st.markdown("#### 🎯 Threshold Analysis")
@@ -818,9 +983,12 @@ Recruitment Team"""
 
         # Score distribution histogram
         st.markdown("#### 📈 Score Distribution Histogram")
-        score_ranges = pd.cut(df['score'], bins=[0, 20, 40, 60, 80, 100], labels=['0-20', '21-40', '41-60', '61-80', '81-100'])
-        score_dist = score_ranges.value_counts().sort_index()
-        st.bar_chart(score_dist)
+        try:
+            score_ranges = pd.cut(df['score'], bins=[0, 20, 40, 60, 80, 100], labels=['0-20', '21-40', '41-60', '61-80', '81-100'])
+            score_dist = score_ranges.value_counts().sort_index()
+            st.bar_chart(score_dist)
+        except Exception as e:
+            st.warning(f"Could not generate score histogram: {str(e)}")
 
         # Detailed data table with enhanced filtering
         st.markdown("#### 🗂️ Complete Dataset")
@@ -854,28 +1022,43 @@ Recruitment Team"""
                 mime="text/csv"
             )
 
-        # Fraud detection summary
+        # Quality control summary
         st.markdown("#### 🚨 Quality Control")
-        flagged = df[df["fraud_detected"] == True]
-        if not flagged.empty:
-            st.error(f"⚠️ Found {len(flagged)} profiles with potential issues:")
-            flagged_display = flagged[["name", "red_flags", "missing_gaps", "email", "score"]]
-            flagged_display.columns = ["Name", "Red Flags", "Missing Info", "Email", "Score"]
-            st.dataframe(flagged_display, use_container_width=True, hide_index=True)
+        if 'fraud_detected' in df.columns:
+            flagged = df[df["fraud_detected"] == True]
+            if not flagged.empty:
+                st.error(f"⚠️ Found {len(flagged)} profiles with potential issues:")
+                display_cols = ["name"]
+                if 'red_flags' in flagged.columns:
+                    display_cols.append("red_flags")
+                if 'missing_gaps' in flagged.columns:
+                    display_cols.append("missing_gaps")
+                if 'email' in flagged.columns:
+                    display_cols.append("email")
+                if 'score' in flagged.columns:
+                    display_cols.append("score")
+                
+                flagged_display = flagged[display_cols]
+                column_names = [col.replace('_', ' ').title() for col in display_cols]
+                flagged_display.columns = column_names
+                st.dataframe(flagged_display, use_container_width=True, hide_index=True)
+            else:
+                st.success("✅ No fraud or quality issues detected in any profiles")
         else:
-            st.success("✅ No fraud or quality issues detected in any profiles")
+            st.info("Quality control data not available")
 
         # Skills analysis
-        st.markdown("#### 🛠️ Skills Analysis")
-        skills_data = df[df['skills_match'] > 0]['skills_match']
-        if not skills_data.empty:
-            col1, col2 = st.columns(2)
-            with col1:
-                st.metric("Average Skills Match", f"{skills_data.mean():.1f}%")
-                st.metric("High Skills Match (>80%)", len(skills_data[skills_data > 80]))
-            with col2:
-                st.metric("Low Skills Match (<40%)", len(skills_data[skills_data < 40]))
-                st.metric("Skills Match Std Dev", f"{skills_data.std():.1f}%")
+        if 'skills_match' in df.columns:
+            st.markdown("#### 🛠️ Skills Analysis")
+            skills_data = df[df['skills_match'] > 0]['skills_match']
+            if not skills_data.empty:
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.metric("Average Skills Match", f"{skills_data.mean():.1f}%")
+                    st.metric("High Skills Match (>80%)", len(skills_data[skills_data > 80]))
+                with col2:
+                    st.metric("Low Skills Match (<40%)", len(skills_data[skills_data < 40]))
+                    st.metric("Skills Match Std Dev", f"{skills_data.std():.1f}%")
 
 elif not st.session_state["analysis_done"]:
     # Welcome screen with enhanced features
