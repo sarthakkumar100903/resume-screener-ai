@@ -1,781 +1,606 @@
+# email_generator.py — Enhanced email functionality with better error handling
+
 import smtplib
+import ssl
 import logging
-import time
-import os
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from typing import Dict, List, Optional, Any
-import pandas as pd
 from constants import EMAIL_TEMPLATES
-from dataclasses import dataclass
+import os
 
 # Configure logging
 logger = logging.getLogger(__name__)
 
-@dataclass
-class EmailConfig:
-    """Email configuration settings"""
-    smtp_server: str = "smtp.gmail.com"
-    smtp_port: int = 587
-    sender_email: str = "demoprojectid3@gmail.com"
-    sender_password: str = "rpdsmhgbvppgldjx"  # App password from .env
-    company_name: str = "EazyAI Technologies"
-    use_ssl: bool = False  # Use STARTTLS instead
-    timeout: int = 30
+# Email configuration from environment variables
+EMAIL_CONFIG = {
+    "smtp_server": os.getenv("SMTP_SERVER", "smtp.gmail.com"),
+    "smtp_port": int(os.getenv("SMTP_PORT", "587")),
+    "smtp_user": os.getenv("SMTP_USER", "demoprojectid3@gmail.com"),
+    "smtp_pass": os.getenv("SMTP_PASS", "rpdsmhgbvppgldjx"),
+    "hr_email": os.getenv("HR_EMAIL", "demoprojectid3@gmail.com")
+}
 
-# Global email configuration - load from environment variables
-email_config = EmailConfig(
-    sender_email=os.getenv("SMTP_USER", "demoprojectid3@gmail.com"),
-    sender_password=os.getenv("SMTP_PASS", "rpdsmhgbvppgldjx"),
-    smtp_server=os.getenv("SMTP_SERVER", "smtp.gmail.com"),
-    smtp_port=int(os.getenv("SMTP_PORT", "587"))
-)
-
-def send_email(
-    to_email: str, 
-    subject: str, 
-    body: str, 
-    sender_name: str = "EazyAI Recruitment Team",
-    max_retries: int = 3,
-    retry_delay: float = 1.0
-) -> bool:
-    """
-    Enhanced email sending with retry logic and better error handling
-    """
-    if not to_email or not to_email.strip():
-        logger.error("Invalid recipient email address")
-        return False
-    
-    if not subject or not body:
-        logger.error("Subject and body are required")
-        return False
-    
-    # Clean and validate email
-    to_email = to_email.strip().lower()
-    if not is_valid_email(to_email):
-        logger.error(f"Invalid email format: {to_email}")
-        return False
-    
-    # Check email configuration
-    if not email_config.sender_email or not email_config.sender_password:
-        logger.error("Email configuration missing - check SMTP_USER and SMTP_PASS environment variables")
-        return False
-    
-    for attempt in range(max_retries):
-        try:
-            logger.info(f"Attempting to send email to {to_email} (attempt {attempt + 1})")
-            
-            # Create message
-            message = MIMEMultipart()
-            message["From"] = f"{sender_name} <{email_config.sender_email}>"
-            message["To"] = to_email
-            message["Subject"] = subject
-            
-            # Add body
-            message.attach(MIMEText(body, "plain"))
-            
-            # Send email using STARTTLS
-            with smtplib.SMTP(email_config.smtp_server, email_config.smtp_port) as server:
-                server.set_debuglevel(0)  # Set to 1 for debugging
-                server.starttls()
-                server.login(email_config.sender_email, email_config.sender_password)
-                text = message.as_string()
-                server.sendmail(email_config.sender_email, to_email, text)
-            
-            logger.info(f"Email sent successfully to {to_email}")
-            return True
-            
-        except smtplib.SMTPAuthenticationError as e:
-            logger.error(f"SMTP authentication failed: {str(e)}")
-            logger.error("Check your email credentials and app password")
-            return False  # Don't retry authentication failures
-            
-        except smtplib.SMTPRecipientsRefused as e:
-            logger.error(f"Recipient refused: {to_email} - {str(e)}")
-            return False  # Don't retry recipient failures
-            
-        except smtplib.SMTPConnectError as e:
-            logger.error(f"SMTP connection failed: {str(e)}")
-            if attempt < max_retries - 1:
-                logger.info(f"Retrying in {retry_delay} seconds...")
-                time.sleep(retry_delay * (attempt + 1))  # Exponential backoff
-            else:
-                logger.error(f"Failed to connect after {max_retries} attempts")
-                return False
-                
-        except (smtplib.SMTPException, ConnectionError, TimeoutError) as e:
-            logger.warning(f"Email attempt {attempt + 1} failed for {to_email}: {str(e)}")
-            if attempt < max_retries - 1:
-                time.sleep(retry_delay * (attempt + 1))  # Exponential backoff
-            else:
-                logger.error(f"Failed to send email to {to_email} after {max_retries} attempts")
-                return False
-        
-        except Exception as e:
-            logger.error(f"Unexpected error sending email to {to_email}: {str(e)}")
-            if attempt < max_retries - 1:
-                time.sleep(retry_delay)
-            else:
-                return False
-    
-    return False
-
-def send_templated_email(
-    to_email: str,
-    template_type: str,
-    candidate_data: Dict[str, Any],
-    custom_data: Dict[str, Any] = None
-) -> bool:
-    """
-    Send email using predefined templates with data substitution
-    """
-    if template_type not in EMAIL_TEMPLATES:
-        logger.error(f"Unknown template type: {template_type}")
-        return False
-    
-    template = EMAIL_TEMPLATES[template_type]
-    
-    # Prepare template data with safe defaults
-    template_data = {
-        "name": safe_get_field(candidate_data, "name", "Candidate"),
-        "role": safe_get_field(candidate_data, "jd_role", "the position"),
-        "company_name": email_config.company_name,
-        "highlights": format_highlights(candidate_data.get("highlights", [])),
-    }
-    
-    # Add all candidate data safely
-    for key, value in candidate_data.items():
-        if key not in template_data:
-            template_data[key] = safe_get_field(candidate_data, key, "N/A")
-    
-    # Add custom data if provided
-    if custom_data:
-        template_data.update(custom_data)
-    
-    try:
-        # Format subject and body with error handling
-        subject = template["subject"].format(**template_data)
-        body = template["body"].format(**template_data)
-        
-        return send_email(to_email, subject, body)
-        
-    except KeyError as e:
-        logger.error(f"Missing template variable: {str(e)}")
-        logger.error(f"Available variables: {list(template_data.keys())}")
-        return False
-    except Exception as e:
-        logger.error(f"Template formatting error: {str(e)}")
-        return False
-
-def send_bulk_emails(
-    candidates: List[Dict[str, Any]],
-    template_type: str,
-    progress_callback: Optional[callable] = None,
-    batch_size: int = 5,  # Reduced batch size for stability
-    batch_delay: float = 3.0  # Increased delay between batches
-) -> Dict[str, Any]:
-    """
-    Send bulk emails with progress tracking and rate limiting
-    """
-    results = {
-        "total": len(candidates),
-        "sent": 0,
-        "failed": 0,
-        "errors": []
-    }
-    
-    if not candidates:
-        logger.warning("No candidates provided for bulk email")
-        return results
-    
-    logger.info(f"Starting bulk email send: {len(candidates)} emails, template: {template_type}")
-    
-    for i in range(0, len(candidates), batch_size):
-        batch = candidates[i:i + batch_size]
-        batch_start_time = time.time()
-        
-        logger.info(f"Processing batch {i//batch_size + 1}: {len(batch)} emails")
-        
-        for j, candidate in enumerate(batch):
-            candidate_name = safe_get_field(candidate, "name", "Unknown")
-            email = safe_get_field(candidate, "email", "").strip()
-            
-            if not email or email in ['N/A', '', 'nan', 'None']:
-                results["failed"] += 1
-                results["errors"].append({
-                    "candidate": candidate_name,
-                    "error": "Missing or invalid email address"
-                })
-                logger.warning(f"No valid email for {candidate_name}")
-                continue
-            
-            # Send email
-            logger.info(f"Sending email to {candidate_name} ({email})")
-            if send_templated_email(email, template_type, candidate):
-                results["sent"] += 1
-                logger.info(f"✅ Email sent to {candidate_name}")
-            else:
-                results["failed"] += 1
-                results["errors"].append({
-                    "candidate": candidate_name,
-                    "email": email,
-                    "error": "Failed to send email"
-                })
-                logger.error(f"❌ Failed to send email to {candidate_name}")
-            
-            # Update progress
-            if progress_callback:
-                progress = (i + j + 1) / len(candidates)
-                progress_callback(progress, candidate_name)
-            
-            # Small delay between individual emails
-            time.sleep(0.5)
-        
-        batch_time = time.time() - batch_start_time
-        logger.info(f"Completed batch {i//batch_size + 1}: {len(batch)} emails in {batch_time:.2f}s")
-        
-        # Rate limiting between batches
-        if i + batch_size < len(candidates):
-            logger.info(f"Waiting {batch_delay}s before next batch...")
-            time.sleep(batch_delay)
-    
-    success_rate = (results["sent"] / results["total"] * 100) if results["total"] > 0 else 0
-    logger.info(f"Bulk email completed: {results['sent']}/{results['total']} sent ({success_rate:.1f}% success rate)")
-    
-    return results
-
-def check_missing_info(candidate_data: Dict[str, Any]) -> List[str]:
-    """
-    Enhanced function to check for missing candidate information
-    """
-    missing_fields = []
-    
-    # Define required fields and their display names
-    required_fields = {
-        "name": "Full Name",
-        "email": "Email Address",
-        "phone": "Phone Number"
-    }
-    
-    for field, display_name in required_fields.items():
-        value = candidate_data.get(field, "")
-        if is_missing_value(value):
-            missing_fields.append(display_name)
-    
-    # Check for additional quality indicators
-    if safe_get_score(candidate_data, "score") == 0:
-        missing_fields.append("Valid Resume Content")
-    
-    if safe_get_score(candidate_data, "jd_similarity") < 10:
-        missing_fields.append("Relevant Experience")
-    
-    # Check for empty fitment
-    if is_missing_value(candidate_data.get("fitment")):
-        missing_fields.append("Candidate Fitment Analysis")
-    
-    return missing_fields
-
-def send_missing_info_email(
-    to_email: str, 
-    candidate_name: str, 
-    missing_fields: List[str],
-    role: str = "the position",
-    deadline: str = "within 3 business days"
-) -> bool:
-    """
-    Enhanced function to send missing information request emails
-    """
-    if not missing_fields:
-        logger.warning("No missing fields specified for missing info email")
-        return False
-    
-    if not is_valid_email(to_email):
-        logger.error(f"Invalid email address: {to_email}")
-        return False
-    
-    missing_str = format_list_for_email(missing_fields)
-    candidate_name = candidate_name if candidate_name and candidate_name != "N/A" else "Candidate"
-    
-    subject = f"Additional Information Required - {role} Application"
-    
-    body = f"""Dear {candidate_name},
-
-Thank you for your interest in the {role} position at {email_config.company_name}.
-
-We have received your application and are currently reviewing it. However, we noticed that the following information is missing or incomplete:
-
-{missing_str}
-
-To continue processing your application, please reply to this email with the missing information {deadline}.
-
-If you have any questions about this request, please don't hesitate to contact us.
-
-Best regards,
-{email_config.company_name} Recruitment Team
-
----
-Please reply to this email with the requested information. Do not reply if this message was sent in error."""
-    
-    return send_email(to_email, subject, body)
-
-def send_interview_invitation(
-    candidate_data: Dict[str, Any],
-    interview_details: Dict[str, Any]
-) -> bool:
-    """
-    Send interview invitation email with comprehensive details
-    """
-    required_details = ["date", "time", "format", "duration"]
-    for detail in required_details:
-        if detail not in interview_details:
-            logger.error(f"Missing required interview detail: {detail}")
-            return False
-    
-    email = safe_get_field(candidate_data, "email", "")
-    if not email or not is_valid_email(email):
-        logger.error("No valid email address for interview invitation")
-        return False
-    
-    name = safe_get_field(candidate_data, "name", "Candidate")
-    role = safe_get_field(candidate_data, "jd_role", "the position")
-    
-    subject = f"Interview Invitation - {role} Position at {email_config.company_name}"
-    
-    # Format interview details
-    interview_format = interview_details["format"].title()
-    meeting_link = interview_details.get("meeting_link", "")
-    location = interview_details.get("location", "")
-    interviewer = interview_details.get("interviewer", "Our team")
-    
-    body = f"""Dear {name},
-
-Congratulations! We are pleased to invite you for an interview for the {role} position at {email_config.company_name}.
-
-INTERVIEW DETAILS:
-📅 Date: {interview_details['date']}
-🕒 Time: {interview_details['time']}
-💻 Format: {interview_format}
-⏱️ Duration: {interview_details['duration']} minutes
-👥 Interviewer: {interviewer}"""
-
-    if meeting_link:
-        body += f"\n🔗 Meeting Link: {meeting_link}"
-    
-    if location:
-        body += f"\n📍 Location: {location}"
-    
-    body += f"""
-
-Please confirm your availability by replying to this email at least 24 hours before the scheduled interview.
-
-WHAT TO EXPECT:
-• Technical discussion about your experience and skills
-• Questions about your approach to problem-solving
-• Overview of the role and our company culture
-• Opportunity to ask questions about the position
-
-PREPARATION:
-• Review the job description and requirements
-• Prepare examples of relevant projects and achievements
-• Have questions ready about the role and company
-• Ensure stable internet connection (for virtual interviews)
-
-If you need to reschedule or have any questions, please contact us as soon as possible.
-
-We look forward to meeting you and learning more about your experience!
-
-Best regards,
-{email_config.company_name} Recruitment Team
-
----
-This is an interview invitation. Please respond to confirm your attendance."""
-    
-    return send_email(email, subject, body)
-
-def send_status_update_email(
-    candidate_data: Dict[str, Any],
-    status: str,
-    custom_message: str = ""
-) -> bool:
-    """
-    Send status update email to candidate
-    """
-    status_mapping = {
-        "shortlisted": "shortlist",
-        "shortlist": "shortlist",
-        "under_review": "review",
-        "review": "review",
-        "rejected": "reject",
-        "reject": "reject"
-    }
-    
-    template_type = status_mapping.get(status.lower())
-    if not template_type:
-        logger.error(f"Unknown status type: {status}")
-        return False
-    
-    # Add custom message if provided
-    custom_data = {}
-    if custom_message:
-        custom_data["custom_message"] = custom_message
-    
-    email = safe_get_field(candidate_data, "email", "")
-    if not email or not is_valid_email(email):
-        logger.error("Invalid email address for status update")
-        return False
-    
-    return send_templated_email(email, template_type, candidate_data, custom_data)
-
-# Utility functions
-
-def is_valid_email(email: str) -> bool:
-    """Validate email format with comprehensive check"""
-    if not email or not isinstance(email, str):
-        return False
-    
+def validate_email(email: str) -> bool:
+    """Validate email format"""
     import re
-    # More comprehensive email regex
     pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-    
-    # Basic format check
-    if not re.match(pattern, email):
-        return False
-    
-    # Additional checks
-    if '..' in email or email.startswith('.') or email.endswith('.'):
-        return False
-    
-    if '@' not in email or email.count('@') != 1:
-        return False
-    
-    local, domain = email.split('@')
-    if not local or not domain:
-        return False
-    
-    return True
+    return re.match(pattern, email.strip()) is not None
 
-def is_missing_value(value: Any) -> bool:
-    """Check if a value is considered missing"""
-    if value is None:
-        return True
-    if pd.isna(value):
-        return True
-    if str(value).strip().lower() in ["", "n/a", "na", "null", "none", "nan"]:
-        return True
-    return False
-
-def safe_get_field(data: dict, key: str, default: Any = "N/A") -> Any:
-    """Safely get field from data with fallback"""
-    value = data.get(key, default)
-    if is_missing_value(value):
-        return default
-    return value
-
-def safe_get_score(data: dict, key: str, default: int = 0) -> int:
-    """Safely get numeric score from data"""
-    value = data.get(key, default)
+def send_email(to_email: str, subject: str, body: str, from_email: Optional[str] = None) -> bool:
+    """
+    Send email with enhanced error handling and validation
+    """
     try:
-        return int(float(value)) if not is_missing_value(value) else default
-    except (ValueError, TypeError):
-        return default
-
-def format_highlights(highlights: List[str]) -> str:
-    """Format highlights list for email templates"""
-    if not highlights or not isinstance(highlights, list):
-        return "• Your qualifications and experience"
-    
-    # Filter out empty or invalid highlights
-    valid_highlights = [h for h in highlights if h and str(h).strip() and str(h).strip() not in ["N/A", "n/a", "none"]]
-    
-    if not valid_highlights:
-        return "• Your qualifications and experience"
-    
-    if len(valid_highlights) == 1:
-        return f"• {valid_highlights[0]}"
-    
-    # Format up to 3 highlights
-    formatted = []
-    for i, highlight in enumerate(valid_highlights[:3]):
-        formatted.append(f"• {highlight}")
-    
-    return "\n".join(formatted)
-
-def format_list_for_email(items: List[str]) -> str:
-    """Format a list of items for email body"""
-    if not items:
-        return "• No specific items identified"
-    
-    # Filter valid items
-    valid_items = [item for item in items if item and str(item).strip()]
-    
-    if not valid_items:
-        return "• No specific items identified"
-    
-    if len(valid_items) == 1:
-        return f"• {valid_items[0]}"
-    
-    return "\n".join([f"• {item}" for item in valid_items])
-
-def validate_email_config() -> bool:
-    """Validate email configuration"""
-    required_fields = ["sender_email", "sender_password", "smtp_server"]
-    
-    for field in required_fields:
-        value = getattr(email_config, field, None)
-        if not value:
-            logger.error(f"Missing email configuration: {field}")
+        # Validate inputs
+        if not to_email or not validate_email(to_email):
+            logger.error(f"Invalid recipient email: {to_email}")
             return False
-    
-    # Test email format
-    if not is_valid_email(email_config.sender_email):
-        logger.error(f"Invalid sender email format: {email_config.sender_email}")
-        return False
-    
-    logger.info("Email configuration validation passed")
-    return True
-
-def test_email_connection() -> bool:
-    """Test email server connection"""
-    if not validate_email_config():
-        return False
-    
-    try:
-        logger.info("Testing SMTP connection...")
-        with smtplib.SMTP(email_config.smtp_server, email_config.smtp_port) as server:
-            server.set_debuglevel(0)
-            server.starttls()
-            server.login(email_config.sender_email, email_config.sender_password)
         
-        logger.info("✅ Email connection test successful")
+        if not subject or not body:
+            logger.error("Subject or body is empty")
+            return False
+        
+        # Use default from_email if not provided
+        if not from_email:
+            from_email = EMAIL_CONFIG["hr_email"]
+        
+        # Create message
+        message = MIMEMultipart("alternative")
+        message["Subject"] = subject
+        message["From"] = from_email
+        message["To"] = to_email
+        
+        # Create HTML and plain text versions
+        text_part = MIMEText(body, "plain")
+        html_body = body.replace('\n', '<br>')
+        html_part = MIMEText(f"""
+        <html>
+            <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+                {html_body}
+                <br><br>
+                <hr>
+                <p style="font-size: 12px; color: #666;">
+                    This email was sent by EazyAI Resume Screener
+                </p>
+            </body>
+        </html>
+        """, "html")
+        
+        message.attach(text_part)
+        message.attach(html_part)
+        
+        # Send email
+        context = ssl.create_default_context()
+        
+        with smtplib.SMTP(EMAIL_CONFIG["smtp_server"], EMAIL_CONFIG["smtp_port"]) as server:
+            server.starttls(context=context)
+            server.login(EMAIL_CONFIG["smtp_user"], EMAIL_CONFIG["smtp_pass"])
+            text = message.as_string()
+            server.sendmail(from_email, to_email, text)
+        
+        logger.info(f"Email sent successfully to {to_email}")
         return True
         
     except smtplib.SMTPAuthenticationError as e:
-        logger.error(f"❌ Email authentication failed: {str(e)}")
-        logger.error("Check your email credentials and app password")
+        logger.error(f"SMTP authentication failed: {str(e)}")
         return False
-    except smtplib.SMTPConnectError as e:
-        logger.error(f"❌ SMTP connection failed: {str(e)}")
+    except smtplib.SMTPRecipientsRefused as e:
+        logger.error(f"Recipient email refused: {str(e)}")
+        return False
+    except smtplib.SMTPException as e:
+        logger.error(f"SMTP error: {str(e)}")
         return False
     except Exception as e:
-        logger.error(f"❌ Email connection test failed: {str(e)}")
+        logger.error(f"Unexpected error sending email: {str(e)}")
         return False
+
+def generate_email_content(candidate: Dict[str, Any], verdict: str, role: str = "Position", company_name: str = "Our Company") -> Dict[str, str]:
+    """
+    Generate email content based on candidate data and verdict
+    """
+    try:
+        name = candidate.get("name", "Candidate")
+        
+        # Get template based on verdict
+        template = EMAIL_TEMPLATES.get(verdict.lower(), EMAIL_TEMPLATES["review"])
+        
+        # Format subject
+        subject = template["subject"].format(role=role)
+        
+        # Format body with candidate-specific information
+        body = template["body"].format(
+            name=name,
+            role=role,
+            company_name=company_name,
+            highlights=format_highlights(candidate.get("highlights", [])),
+        )
+        
+        return {
+            "subject": subject,
+            "body": body
+        }
+        
+    except Exception as e:
+        logger.error(f"Error generating email content: {str(e)}")
+        return {
+            "subject": f"Application Update - {role}",
+            "body": f"Dear {candidate.get('name', 'Candidate')},\n\nThank you for your application.\n\nBest regards,\n{company_name} Team"
+        }
+
+def format_highlights(highlights: List[str]) -> str:
+    """Format highlights list for email"""
+    try:
+        if not highlights:
+            return "• Your qualifications and experience"
+        
+        formatted = []
+        for highlight in highlights[:5]:  # Limit to 5 highlights
+            if highlight and highlight.strip():
+                formatted.append(f"• {highlight.strip()}")
+        
+        return "\n".join(formatted) if formatted else "• Your qualifications and experience"
+        
+    except Exception as e:
+        logger.error(f"Error formatting highlights: {str(e)}")
+        return "• Your qualifications and experience"
+
+def send_bulk_emails(candidates: List[Dict[str, Any]], verdict: str, role: str = "Position", company_name: str = "Our Company") -> Dict[str, int]:
+    """
+    Send bulk emails to multiple candidates
+    """
+    results = {
+        "sent": 0,
+        "failed": 0,
+        "invalid_emails": 0
+    }
+    
+    try:
+        for candidate in candidates:
+            email = candidate.get("email", "").strip()
+            
+            if not email or not validate_email(email):
+                results["invalid_emails"] += 1
+                continue
+            
+            # Generate email content
+            email_content = generate_email_content(candidate, verdict, role, company_name)
+            
+            # Send email
+            if send_email(email, email_content["subject"], email_content["body"]):
+                results["sent"] += 1
+            else:
+                results["failed"] += 1
+        
+        logger.info(f"Bulk email results: {results}")
+        return results
+        
+    except Exception as e:
+        logger.error(f"Error in bulk email sending: {str(e)}")
+        return results
+
+def check_missing_info(candidate: Dict[str, Any]) -> List[str]:
+    """
+    Check for missing information in candidate data
+    """
+    missing_info = []
+    
+    try:
+        # Check required fields
+        required_fields = {
+            "name": "Full name",
+            "email": "Email address",
+            "phone": "Phone number"
+        }
+        
+        for field, description in required_fields.items():
+            value = candidate.get(field, "").strip()
+            if not value or value.lower() in ["n/a", "na", "none", "null"]:
+                missing_info.append(description)
+        
+        # Check for empty scores
+        score_fields = ["skills_match", "domain_match", "experience_match", "jd_similarity"]
+        for field in score_fields:
+            if candidate.get(field, 0) == 0:
+                missing_info.append(f"{field.replace('_', ' ').title()} score")
+        
+        # Check for missing content
+        content_fields = {
+            "fitment": "Fitment analysis",
+            "summary_5_lines": "Candidate summary"
+        }
+        
+        for field, description in content_fields.items():
+            value = str(candidate.get(field, "")).strip()
+            if not value or value.lower() in ["n/a", "na", "none", "null", "analysis not available"]:
+                missing_info.append(description)
+        
+        return missing_info
+        
+    except Exception as e:
+        logger.error(f"Error checking missing info: {str(e)}")
+        return ["Error checking information completeness"]
+
+def send_missing_info_email(candidate: Dict[str, Any], missing_info: List[str], role: str = "Position") -> bool:
+    """
+    Send email requesting missing information from candidate
+    """
+    try:
+        email = candidate.get("email", "").strip()
+        if not email or not validate_email(email):
+            logger.error(f"Invalid email for missing info request: {email}")
+            return False
+        
+        name = candidate.get("name", "Candidate")
+        missing_list = "\n".join([f"• {item}" for item in missing_info])
+        
+        subject = f"Additional Information Required - {role} Application"
+        
+        body = f"""Dear {name},
+
+Thank you for your application for the {role} position.
+
+To complete our review of your application, we need some additional information:
+
+{missing_list}
+
+Please provide the missing information at your earliest convenience by replying to this email.
+
+If you have any questions, please don't hesitate to contact us.
+
+Best regards,
+Recruitment Team"""
+        
+        return send_email(email, subject, body)
+        
+    except Exception as e:
+        logger.error(f"Error sending missing info email: {str(e)}")
+        return False
+
+def create_interview_invitation(candidate: Dict[str, Any], interview_details: Dict[str, str], role: str = "Position") -> Dict[str, str]:
+    """
+    Create interview invitation email content
+    """
+    try:
+        name = candidate.get("name", "Candidate")
+        
+        subject = f"Interview Invitation - {role} Position"
+        
+        body = f"""Dear {name},
+
+Congratulations! We are pleased to invite you for an interview for the {role} position.
+
+Interview Details:
+• Date: {interview_details.get('date', 'To be confirmed')}
+• Time: {interview_details.get('time', 'To be confirmed')}
+• Duration: {interview_details.get('duration', '45-60 minutes')}
+• Format: {interview_details.get('format', 'In-person/Video call')}
+• Location: {interview_details.get('location', 'To be confirmed')}
+
+Please confirm your availability by replying to this email within 24 hours.
+
+What to expect:
+• Technical discussion about your experience
+• Questions about the role and our company
+• Opportunity for you to ask questions
+
+Please bring:
+• Updated resume
+• Portfolio (if applicable)
+• Valid ID
+
+If you need to reschedule, please let us know as soon as possible.
+
+We look forward to meeting you!
+
+Best regards,
+Recruitment Team"""
+        
+        return {"subject": subject, "body": body}
+        
+    except Exception as e:
+        logger.error(f"Error creating interview invitation: {str(e)}")
+        return {
+            "subject": f"Interview Invitation - {role}",
+            "body": f"Dear {candidate.get('name', 'Candidate')},\n\nWe would like to invite you for an interview.\n\nBest regards,\nRecruitment Team"
+        }
+
+def send_interview_invitation(candidate: Dict[str, Any], interview_details: Dict[str, str], role: str = "Position") -> bool:
+    """
+    Send interview invitation email
+    """
+    try:
+        email = candidate.get("email", "").strip()
+        if not email or not validate_email(email):
+            logger.error(f"Invalid email for interview invitation: {email}")
+            return False
+        
+        email_content = create_interview_invitation(candidate, interview_details, role)
+        return send_email(email, email_content["subject"], email_content["body"])
+        
+    except Exception as e:
+        logger.error(f"Error sending interview invitation: {str(e)}")
+        return False
+
+def create_follow_up_email(candidate: Dict[str, Any], role: str = "Position", days_since_application: int = 7) -> Dict[str, str]:
+    """
+    Create follow-up email content for candidates under review
+    """
+    try:
+        name = candidate.get("name", "Candidate")
+        
+        subject = f"Application Status Update - {role} Position"
+        
+        body = f"""Dear {name},
+
+Thank you for your interest in the {role} position and for your patience during our review process.
+
+We wanted to provide you with an update on your application status:
+
+Your application is currently under review by our hiring team. We have received a high volume of applications for this position, and we are carefully evaluating each candidate to ensure we make the best hiring decision.
+
+What happens next:
+• Our team will complete the initial review within the next 3-5 business days
+• Qualified candidates will be contacted for the next stage of the process
+• All applicants will be notified of their status regardless of the outcome
+
+We appreciate your continued interest in our organization and will be in touch soon with an update.
+
+If you have any questions in the meantime, please don't hesitate to reach out.
+
+Best regards,
+Recruitment Team
+
+---
+Application submitted: {days_since_application} days ago
+Current status: Under Review"""
+        
+        return {"subject": subject, "body": body}
+        
+    except Exception as e:
+        logger.error(f"Error creating follow-up email: {str(e)}")
+        return {
+            "subject": f"Application Update - {role}",
+            "body": f"Dear {candidate.get('name', 'Candidate')},\n\nYour application is under review.\n\nBest regards,\nRecruitment Team"
+        }
+
+def send_follow_up_email(candidate: Dict[str, Any], role: str = "Position", days_since_application: int = 7) -> bool:
+    """
+    Send follow-up email to candidate
+    """
+    try:
+        email = candidate.get("email", "").strip()
+        if not email or not validate_email(email):
+            logger.error(f"Invalid email for follow-up: {email}")
+            return False
+        
+        email_content = create_follow_up_email(candidate, role, days_since_application)
+        return send_email(email, email_content["subject"], email_content["body"])
+        
+    except Exception as e:
+        logger.error(f"Error sending follow-up email: {str(e)}")
+        return False
+
+def test_email_connection() -> Dict[str, Any]:
+    """
+    Test email configuration and connection
+    """
+    test_result = {
+        "connection_successful": False,
+        "authentication_successful": False,
+        "error_message": None
+    }
+    
+    try:
+        # Test SMTP connection
+        context = ssl.create_default_context()
+        
+        with smtplib.SMTP(EMAIL_CONFIG["smtp_server"], EMAIL_CONFIG["smtp_port"]) as server:
+            server.starttls(context=context)
+            test_result["connection_successful"] = True
+            
+            # Test authentication
+            server.login(EMAIL_CONFIG["smtp_user"], EMAIL_CONFIG["smtp_pass"])
+            test_result["authentication_successful"] = True
+        
+        logger.info("Email connection test successful")
+        
+    except smtplib.SMTPAuthenticationError as e:
+        test_result["error_message"] = f"Authentication failed: {str(e)}"
+        logger.error(f"Email authentication failed: {str(e)}")
+    except smtplib.SMTPConnectError as e:
+        test_result["error_message"] = f"Connection failed: {str(e)}"
+        logger.error(f"Email connection failed: {str(e)}")
+    except Exception as e:
+        test_result["error_message"] = f"Unexpected error: {str(e)}"
+        logger.error(f"Email test failed: {str(e)}")
+    
+    return test_result
 
 def send_test_email(test_recipient: str = None) -> bool:
-    """Send a test email to verify configuration"""
-    if not test_recipient:
-        test_recipient = email_config.sender_email
-    
-    if not is_valid_email(test_recipient):
-        logger.error(f"Invalid test recipient email: {test_recipient}")
-        return False
-    
-    subject = "Test Email - EazyAI Resume Screener"
-    body = f"""This is a test email from EazyAI Resume Screener.
-
-Configuration:
-• SMTP Server: {email_config.smtp_server}:{email_config.smtp_port}
-• Sender: {email_config.sender_email}
-• Timestamp: {time.strftime('%Y-%m-%d %H:%M:%S')}
+    """
+    Send a test email to verify functionality
+    """
+    try:
+        recipient = test_recipient or EMAIL_CONFIG["hr_email"]
+        
+        if not validate_email(recipient):
+            logger.error(f"Invalid test email recipient: {recipient}")
+            return False
+        
+        subject = "EazyAI Resume Screener - Test Email"
+        body = """This is a test email from EazyAI Resume Screener.
 
 If you received this email, the email configuration is working correctly.
 
+Test Details:
+• SMTP Server: {smtp_server}
+• Port: {smtp_port} 
+• Sender: {smtp_user}
+
 Best regards,
-EazyAI System"""
-    
-    logger.info(f"Sending test email to {test_recipient}")
-    return send_email(test_recipient, subject, body)
+EazyAI System""".format(**EMAIL_CONFIG)
+        
+        return send_email(recipient, subject, body)
+        
+    except Exception as e:
+        logger.error(f"Error sending test email: {str(e)}")
+        return False
 
-# Email analytics and reporting
-
-class EmailAnalytics:
-    """Track email sending analytics with enhanced features"""
+def get_email_statistics(candidates: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Get statistics about email addresses in candidate list
+    """
+    stats = {
+        "total_candidates": len(candidates),
+        "valid_emails": 0,
+        "invalid_emails": 0,
+        "missing_emails": 0,
+        "email_domains": {},
+        "duplicate_emails": 0
+    }
     
-    def __init__(self):
-        self.reset_stats()
-    
-    def reset_stats(self):
-        """Reset all statistics"""
-        self.total_sent = 0
-        self.total_failed = 0
-        self.template_usage = {}
-        self.error_types = {}
-        self.recipient_status = {}
-        self.start_time = time.time()
+    try:
+        seen_emails = set()
         
-        logger.info("Email analytics reset")
-    
-    def record_success(self, template_type: str = "unknown", recipient: str = ""):
-        """Record successful email send"""
-        self.total_sent += 1
-        self.template_usage[template_type] = self.template_usage.get(template_type, 0) + 1
+        for candidate in candidates:
+            email = candidate.get("email", "").strip().lower()
+            
+            if not email or email in ["n/a", "na", "none", "null"]:
+                stats["missing_emails"] += 1
+            elif not validate_email(email):
+                stats["invalid_emails"] += 1
+            else:
+                if email in seen_emails:
+                    stats["duplicate_emails"] += 1
+                else:
+                    seen_emails.add(email)
+                    stats["valid_emails"] += 1
+                    
+                    # Extract domain
+                    domain = email.split("@")[1]
+                    stats["email_domains"][domain] = stats["email_domains"].get(domain, 0) + 1
         
-        if recipient:
-            self.recipient_status[recipient] = "sent"
-        
-        logger.debug(f"Email success recorded: {template_type}")
-    
-    def record_failure(self, error_type: str = "unknown", recipient: str = ""):
-        """Record failed email send"""
-        self.total_failed += 1
-        self.error_types[error_type] = self.error_types.get(error_type, 0) + 1
-        
-        if recipient:
-            self.recipient_status[recipient] = f"failed: {error_type}"
-        
-        logger.debug(f"Email failure recorded: {error_type}")
-    
-    def get_stats(self) -> Dict[str, Any]:
-        """Get current statistics"""
-        total_attempts = self.total_sent + self.total_failed
-        success_rate = (self.total_sent / total_attempts * 100) if total_attempts > 0 else 0
-        elapsed_time = time.time() - self.start_time
-        
-        stats = {
-            "total_sent": self.total_sent,
-            "total_failed": self.total_failed,
-            "total_attempts": total_attempts,
-            "success_rate": success_rate,
-            "elapsed_time": elapsed_time,
-            "emails_per_minute": (total_attempts / elapsed_time * 60) if elapsed_time > 0 else 0,
-            "template_usage": self.template_usage,
-            "error_types": self.error_types,
-            "most_common_error": max(self.error_types.items(), key=lambda x: x[1])[0] if self.error_types else "None"
-        }
+        # Sort domains by frequency
+        stats["email_domains"] = dict(sorted(stats["email_domains"].items(), key=lambda x: x[1], reverse=True))
         
         return stats
-    
-    def print_summary(self):
-        """Print analytics summary"""
-        stats = self.get_stats()
         
-        print("\n📧 EMAIL ANALYTICS SUMMARY")
-        print("=" * 40)
-        print(f"Total Sent: {stats['total_sent']}")
-        print(f"Total Failed: {stats['total_failed']}")
-        print(f"Success Rate: {stats['success_rate']:.1f}%")
-        print(f"Emails per Minute: {stats['emails_per_minute']:.1f}")
-        
-        if stats['template_usage']:
-            print("\nTemplate Usage:")
-            for template, count in stats['template_usage'].items():
-                print(f"  {template}: {count}")
-        
-        if stats['error_types']:
-            print("\nError Types:")
-            for error, count in stats['error_types'].items():
-                print(f"  {error}: {count}")
-        
-        print("=" * 40)
-
-# Enhanced email queue system for batch processing
-class EmailQueue:
-    """Manage email queue with priority and retry logic"""
-    
-    def __init__(self, max_retries: int = 3, retry_delay: float = 60.0):
-        self.queue = []
-        self.failed_queue = []
-        self.max_retries = max_retries
-        self.retry_delay = retry_delay
-        self.analytics = EmailAnalytics()
-    
-    def add_email(self, to_email: str, subject: str, body: str, priority: int = 1):
-        """Add email to queue with priority (1=high, 2=normal, 3=low)"""
-        email_item = {
-            "to_email": to_email,
-            "subject": subject,
-            "body": body,
-            "priority": priority,
-            "attempts": 0,
-            "created_at": time.time()
-        }
-        
-        self.queue.append(email_item)
-        # Sort by priority (lower number = higher priority)
-        self.queue.sort(key=lambda x: x["priority"])
-        
-        logger.info(f"Email added to queue: {to_email} (priority {priority})")
-    
-    def process_queue(self, batch_size: int = 5, batch_delay: float = 2.0) -> Dict[str, int]:
-        """Process email queue in batches"""
-        results = {"sent": 0, "failed": 0, "skipped": 0}
-        
-        logger.info(f"Processing email queue: {len(self.queue)} emails")
-        
-        while self.queue:
-            # Process batch
-            batch = self.queue[:batch_size]
-            self.queue = self.queue[batch_size:]
-            
-            for email_item in batch:
-                email_item["attempts"] += 1
-                
-                if send_email(email_item["to_email"], email_item["subject"], email_item["body"]):
-                    results["sent"] += 1
-                    self.analytics.record_success("queued", email_item["to_email"])
-                    logger.info(f"✅ Queued email sent: {email_item['to_email']}")
-                else:
-                    if email_item["attempts"] < self.max_retries:
-                        # Add back to failed queue for retry
-                        self.failed_queue.append(email_item)
-                        logger.warning(f"Email failed, will retry: {email_item['to_email']}")
-                    else:
-                        results["failed"] += 1
-                        self.analytics.record_failure("max_retries_reached", email_item["to_email"])
-                        logger.error(f"❌ Email failed permanently: {email_item['to_email']}")
-            
-            # Delay between batches
-            if self.queue:  # Only delay if more emails to process
-                logger.info(f"Waiting {batch_delay}s before next batch...")
-                time.sleep(batch_delay)
-        
-        # Process failed queue if any
-        if self.failed_queue:
-            logger.info(f"Processing {len(self.failed_queue)} failed emails for retry...")
-            time.sleep(self.retry_delay)
-            
-            retry_queue = self.failed_queue.copy()
-            self.failed_queue.clear()
-            
-            for email_item in retry_queue:
-                if email_item["attempts"] < self.max_retries:
-                    self.queue.append(email_item)
-        
-        logger.info(f"Queue processing complete: {results}")
-        return results
-    
-    def get_queue_status(self) -> Dict[str, int]:
-        """Get current queue status"""
-        return {
-            "pending": len(self.queue),
-            "failed_retry": len(self.failed_queue),
-            "total": len(self.queue) + len(self.failed_queue)
-        }
-
-# Global instances
-email_analytics = EmailAnalytics()
-email_queue = EmailQueue()
-
-# Initialization function
-def initialize_email_system() -> bool:
-    """Initialize email system and validate configuration"""
-    logger.info("Initializing email system...")
-    
-    # Validate configuration
-    if not validate_email_config():
-        logger.error("Email system initialization failed: Invalid configuration")
-        return False
-    
-    # Test connection
-    if not test_email_connection():
-        logger.warning("Email system initialized with connection issues")
-        return False
-    
-    logger.info("✅ Email system initialized successfully")
-    return True
-
-# Auto-initialize on import
-if __name__ != "__main__":
-    try:
-        initialize_email_system()
     except Exception as e:
-        logger.error(f"Email system auto-initialization failed: {str(e)}")
+        logger.error(f"Error calculating email statistics: {str(e)}")
+        return stats
+
+def create_rejection_with_feedback(candidate: Dict[str, Any], role: str = "Position", feedback_points: List[str] = None) -> Dict[str, str]:
+    """
+    Create constructive rejection email with feedback
+    """
+    try:
+        name = candidate.get("name", "Candidate")
+        
+        subject = f"Application Status Update - {role} Position"
+        
+        feedback_section = ""
+        if feedback_points:
+            feedback_section = """
+Areas for potential development based on our requirements:
+""" + "\n".join([f"• {point}" for point in feedback_points[:3]])  # Limit to 3 points
+        
+        body = f"""Dear {name},
+
+Thank you for your interest in the {role} position and for taking the time to apply.
+
+After careful consideration of all applications, we have decided not to proceed with your candidacy for this specific role. This decision was difficult given the quality of applications we received.
+{feedback_section}
+
+We encourage you to continue developing your skills and to apply for future opportunities that may be a better match for your background.
+
+We will keep your resume on file for future openings that may align with your experience.
+
+Thank you again for considering us, and we wish you all the best in your career journey.
+
+Best regards,
+Recruitment Team
+
+---
+If you have any questions about this decision, please feel free to reach out."""
+        
+        return {"subject": subject, "body": body}
+        
+    except Exception as e:
+        logger.error(f"Error creating rejection with feedback: {str(e)}")
+        return {
+            "subject": f"Application Status - {role}",
+            "body": f"Dear {candidate.get('name', 'Candidate')},\n\nThank you for your application.\n\nBest regards,\nRecruitment Team"
+        }
+
+def schedule_email_batch(candidates: List[Dict[str, Any]], verdict: str, role: str, delay_hours: int = 0) -> Dict[str, Any]:
+    """
+    Schedule batch emails to be sent (placeholder for future scheduling functionality)
+    """
+    try:
+        # For now, this is a placeholder that returns scheduling info
+        # In a full implementation, this would integrate with a task queue
+        
+        valid_emails = [c for c in candidates if validate_email(c.get("email", ""))]
+        
+        schedule_info = {
+            "total_candidates": len(candidates),
+            "valid_emails": len(valid_emails),
+            "invalid_emails": len(candidates) - len(valid_emails),
+            "verdict": verdict,
+            "role": role,
+            "delay_hours": delay_hours,
+            "scheduled": True,
+            "estimated_send_time": f"In {delay_hours} hours" if delay_hours > 0 else "Immediately"
+        }
+        
+        logger.info(f"Email batch scheduled: {schedule_info}")
+        return schedule_info
+        
+    except Exception as e:
+        logger.error(f"Error scheduling email batch: {str(e)}")
+        return {"scheduled": False, "error": str(e)}
+
+# Email template customization functions
+def customize_email_template(template_type: str, custom_content: Dict[str, str]) -> bool:
+    """
+    Customize email templates (placeholder for template management)
+    """
+    try:
+        if template_type not in EMAIL_TEMPLATES:
+            logger.error(f"Unknown template type: {template_type}")
+            return False
+        
+        # In a full implementation, this would save custom templates
+        logger.info(f"Template customization requested for: {template_type}")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Error customizing email template: {str(e)}")
+        return False
+
+def get_email_template_preview(template_type: str, sample_data: Dict[str, Any]) -> Dict[str, str]:
+    """
+    Generate preview of email template with sample data
+    """
+    try:
+        if template_type not in EMAIL_TEMPLATES:
+            return {"error": f"Unknown template type: {template_type}"}
+        
+        # Create sample candidate data
+        sample_candidate = {
+            "name": sample_data.get("name", "John Doe"),
+            "highlights": sample_data.get("highlights", ["Strong technical skills", "Relevant experience", "Good cultural fit"])
+        }
+        
+        role = sample_data.get("role", "Software Developer")
+        company_name = sample_data.get("company_name", "Tech Company")
+        
+        preview = generate_email_content(sample_candidate, template_type, role, company_name)
+        preview["template_type"] = template_type
+        
+        return preview
+        
+    except Exception as e:
+        logger.error(f"Error generating email preview: {str(e)}")
+        return {"error": str(e)}
