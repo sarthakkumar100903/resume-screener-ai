@@ -1,4 +1,4 @@
-# backend.py — Enhanced GPT Evaluator + Role Extractor with improved performance
+# backend.py — Enhanced GPT Evaluator + Role Extractor with improved performance and error handling
 
 import json
 import asyncio
@@ -9,7 +9,7 @@ from constants import AZURE_CONFIG, MODEL_CONFIG, WEIGHTS, STRICT_GPT_PROMPT
 from openai import AzureOpenAI
 from utils import chunk_text
 import numpy as np
-from sklearn.metrics.pairwise import cosine_similarity
+import pandas as pd
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -59,7 +59,7 @@ Role:"""
         role = response.choices[0].message.content.strip()
         
         # Validate role format
-        if 2 <= len(role.split()) <= 6 and not any(char in role for char in ['\\n', '\\t', '|']):
+        if 2 <= len(role.split()) <= 6 and not any(char in role for char in ['\n', '\t', '|']):
             _role_cache[cache_key] = role
             return role
         else:
@@ -90,7 +90,7 @@ async def get_resume_analysis_async(
     try:
         # Optimize text chunking - use only first 2 chunks for speed
         chunks = chunk_text(resume_text, max_tokens=1500)
-        combined_text = "\\n\\n".join(chunks[:2])  # Reduced from 3 to 2 chunks
+        combined_text = "\n\n".join(chunks[:2])  # Reduced from 3 to 2 chunks
         
         # Construct optimized prompt
         user_prompt = f"""
@@ -154,7 +154,7 @@ def parse_gpt_response(
     resume_file: str,
     processing_time: float = 0.0
 ) -> dict:
-    """Enhanced GPT response parser with better error handling"""
+    """Enhanced GPT response parser with better error handling and fallbacks"""
     
     try:
         # Clean the JSON response
@@ -202,23 +202,61 @@ def parse_gpt_response(
     if verdict not in ["shortlist", "review", "reject"]:
         verdict = "review"  # Default to review for invalid verdicts
 
-    # Extract other fields with fallbacks
+    # Extract other fields with fallbacks and proper handling
     def get_field(key: str, fallback: Any = "N/A") -> Any:
         value = parsed.get(key, fallback)
-        return value if value not in [None, "", "null"] else fallback
+        if value is None or value == "" or value == "null":
+            return fallback
+        if isinstance(value, str):
+            value = value.strip()
+            if not value or value.lower() in ["n/a", "na", "none", "null"]:
+                return fallback
+        return value
 
     # Handle name extraction with multiple fallbacks
     extracted_name = get_field("name")
     if extracted_name == "N/A" or not extracted_name:
         extracted_name = contact.get("name", "N/A")
     
+    # Enhanced fitment handling with better fallbacks
+    fitment = get_field("fitment")
+    if fitment == "N/A" or not fitment:
+        # Generate basic fitment based on scores
+        if score_rounded >= 75:
+            fitment = f"Strong candidate with {score_rounded}% overall match. Good alignment with job requirements."
+        elif score_rounded >= 50:
+            fitment = f"Potential candidate with {score_rounded}% overall match. Some gaps in requirements."
+        else:
+            fitment = f"Limited match with {score_rounded}% overall compatibility. Significant gaps identified."
+    
+    # Ensure fitment is not too long
+    if len(str(fitment)) > 500:
+        fitment = str(fitment)[:500] + "..."
+    
+    # Enhanced summary handling
+    summary = get_field("summary_5_lines")
+    if summary == "N/A" or not summary:
+        # Generate basic summary based on available data
+        summary = f"Candidate analysis for {role} position. Overall score: {score_rounded}%. "
+        if skills_match > 0:
+            summary += f"Skills match: {skills_match}%. "
+        if domain_match > 0:
+            summary += f"Domain experience: {domain_match}%. "
+        summary += "Manual review recommended for detailed evaluation."
+    
     # Ensure lists are properly handled
     def get_list_field(key: str) -> list:
         value = parsed.get(key, [])
         if isinstance(value, list):
-            return [str(item) for item in value if item]
-        elif isinstance(value, str) and value != "N/A":
-            return [value]
+            return [str(item).strip() for item in value if item and str(item).strip()]
+        elif isinstance(value, str) and value.strip() and value.strip() not in ["N/A", "n/a", "none", "null"]:
+            # Split string by common delimiters
+            items = []
+            for delimiter in [';', ',', '\n', '|']:
+                if delimiter in value:
+                    items = [item.strip() for item in value.split(delimiter) if item.strip()]
+                    break
+            return items if items else [value.strip()]
         return []
 
     red_flags = get_list_field("red_flags")
@@ -233,6 +271,18 @@ def parse_gpt_response(
     elif score_rounded < 50 and verdict == "shortlist":
         verdict = "review"  # Downgrade from shortlist if score is low
 
+    # Enhanced fraud detection
+    fraud_detected = bool(parsed.get("fraud_detected", False))
+    if not fraud_detected:
+        # Additional fraud checks based on patterns
+        suspicious_patterns = [
+            len(red_flags) > 5,  # Too many red flags
+            score_rounded > 95,  # Suspiciously perfect score
+            skills_match == 100 and domain_match == 100,  # Perfect matches are rare
+            "fake" in str(fitment).lower() or "template" in str(fitment).lower()
+        ]
+        fraud_detected = any(suspicious_patterns)
+
     return {
         "name": extracted_name or "N/A",
         "email": contact.get("email", "N/A"),
@@ -243,13 +293,13 @@ def parse_gpt_response(
         "experience_match": experience_match,
         "jd_similarity": jd_similarity,
         "score": score_rounded,
-        "fitment": get_field("fitment")[:500],  # Limit length
-        "summary_5_lines": get_field("summary_5_lines")[:1000],  # Limit length
+        "fitment": str(fitment),
+        "summary_5_lines": str(summary),
         "red_flags": red_flags[:10],  # Limit number of red flags
         "missing_gaps": missing_gaps[:10],  # Limit number of gaps
-        "fraud_detected": bool(parsed.get("fraud_detected", False)),
+        "fraud_detected": fraud_detected,
         "reasons_if_rejected": rejection_reasons[:10],  # Limit reasons
-        "recommendation": get_field("recommendation")[:500],  # Limit length
+        "recommendation": str(get_field("recommendation"))[:500],  # Limit length
         "highlights": highlights[:15],  # Limit number of highlights
         "verdict": verdict,
         "resume_text": resume_text,
@@ -271,8 +321,18 @@ def create_fallback_response(
     # Basic scoring based on available data
     basic_score = max(0, jd_similarity * 0.6)  # Conservative scoring
     
+    # Extract basic info from contact
+    candidate_name = contact.get("name", "N/A")
+    
+    # Generate basic fitment message
+    fitment = f"Automated analysis incomplete due to: {error_reason}. "
+    if jd_similarity > 60:
+        fitment += f"However, resume shows {jd_similarity}% similarity to job description. Manual review recommended."
+    else:
+        fitment += "Low similarity to job requirements detected. Manual screening suggested."
+    
     return {
-        "name": contact.get("name", "N/A"),
+        "name": candidate_name,
         "email": contact.get("email", "N/A"), 
         "phone": contact.get("phone", "N/A"),
         "jd_role": role,
@@ -281,13 +341,13 @@ def create_fallback_response(
         "experience_match": 0,
         "jd_similarity": jd_similarity,
         "score": round(basic_score, 2),
-        "fitment": f"Analysis incomplete: {error_reason}",
-        "summary_5_lines": "Unable to generate detailed analysis",
+        "fitment": fitment,
+        "summary_5_lines": f"Analysis for {role} position was incomplete. Manual review required to assess candidate suitability.",
         "red_flags": ["Analysis failed - manual review required"],
         "missing_gaps": ["Complete analysis unavailable"],
         "fraud_detected": True,  # Flag for manual review
         "reasons_if_rejected": [f"Analysis failure: {error_reason}"],
-        "recommendation": "Manual review recommended",
+        "recommendation": "Manual review recommended due to analysis failure",
         "highlights": [],
         "verdict": "review",  # Default to review for failed analyses
         "resume_text": resume_text,
@@ -296,7 +356,7 @@ def create_fallback_response(
         "analysis_timestamp": time.time()
     }
 
-# Batch processing helper for improved performance
+# Enhanced batch processing helper for improved performance
 async def batch_process_resumes(
     resume_data_list: list,
     jd: str,
@@ -335,12 +395,18 @@ async def batch_process_resumes(
         batch_results = await asyncio.gather(*tasks, return_exceptions=True)
         
         # Handle results and exceptions
-        for result in batch_results:
+        for j, result in enumerate(batch_results):
             if isinstance(result, Exception):
                 logger.error(f"Batch processing error: {str(result)}")
-                # Create a fallback response
+                # Create a fallback response using batch data
+                batch_data = batch[j] if j < len(batch) else {}
                 results.append(create_fallback_response(
-                    {}, role, 0.0, "", "unknown", str(result)
+                    batch_data.get('contact', {}), 
+                    role, 
+                    batch_data.get('jd_similarity', 0.0), 
+                    batch_data.get('resume_text', ''), 
+                    batch_data.get('resume_file', 'unknown'), 
+                    str(result)
                 ))
             else:
                 results.append(result)
@@ -398,6 +464,53 @@ class PerformanceMonitor:
     
     def record_failure(self):
         self.failed_analyses += 1
+
+# Utility functions for data validation and cleaning
+def validate_candidate_data(candidate_data: dict) -> dict:
+    """Validate and clean candidate data before processing"""
+    cleaned_data = {}
+    
+    # Ensure required fields exist
+    required_fields = ["name", "email", "score", "verdict", "fitment"]
+    for field in required_fields:
+        value = candidate_data.get(field, "N/A")
+        if pd.isna(value) or value == "" or value is None:
+            if field == "score":
+                cleaned_data[field] = 0
+            elif field == "verdict":
+                cleaned_data[field] = "review"
+            else:
+                cleaned_data[field] = "N/A"
+        else:
+            cleaned_data[field] = value
+    
+    # Copy other fields
+    for key, value in candidate_data.items():
+        if key not in cleaned_data:
+            if pd.isna(value) or value == "" or value is None:
+                cleaned_data[key] = "N/A" if isinstance(value, str) else 0 if key.endswith('_match') or key == 'score' else []
+            else:
+                cleaned_data[key] = value
+    
+    return cleaned_data
+
+def sanitize_text_field(text: str, max_length: int = 1000) -> str:
+    """Sanitize and truncate text fields"""
+    if not text or pd.isna(text):
+        return "N/A"
+    
+    text = str(text).strip()
+    if not text or text.lower() in ["n/a", "na", "none", "null"]:
+        return "N/A"
+    
+    # Remove excessive whitespace and newlines
+    text = " ".join(text.split())
+    
+    # Truncate if too long
+    if len(text) > max_length:
+        text = text[:max_length] + "..."
+    
+    return text
 
 # Global performance monitor instance
 performance_monitor = PerformanceMonitor()
