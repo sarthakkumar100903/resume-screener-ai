@@ -168,17 +168,17 @@ def generate_summary_pdf(candidate: Dict[str, Any]) -> bytes:
         try:
             c.setFillColor(header_color)
             c.setFont("Helvetica-Bold", 12)
-            c.drawString(50, y, "👤 Personal Information")
+            c.drawString(50, y, "Personal Information")
             c.setFillColor(black)
             y -= spacing
             
             draw_text_safe("Name", safe_get_value(candidate, "name"), y, "•")
             y -= spacing
-            draw_text_safe("Email", safe_get_value(candidate, "email"), y, "📧")
+            draw_text_safe("Email", safe_get_value(candidate, "email"), y, "•")
             y -= spacing
-            draw_text_safe("Phone", safe_get_value(candidate, "phone"), y, "📞")
+            draw_text_safe("Phone", safe_get_value(candidate, "phone"), y, "•")
             y -= spacing
-            draw_text_safe("Applied Role", safe_get_value(candidate, "jd_role"), y, "💼")
+            draw_text_safe("Applied Role", safe_get_value(candidate, "jd_role"), y, "•")
             y -= spacing * 1.5
         except Exception as e:
             logger.error(f"Error creating personal info section: {str(e)}")
@@ -188,7 +188,7 @@ def generate_summary_pdf(candidate: Dict[str, Any]) -> bytes:
         try:
             c.setFillColor(header_color)
             c.setFont("Helvetica-Bold", 12)
-            c.drawString(50, y, "📊 Assessment Scores")
+            c.drawString(50, y, "Assessment Scores")
             c.setFillColor(black)
             y -= spacing
             
@@ -233,18 +233,18 @@ def generate_summary_pdf(candidate: Dict[str, Any]) -> bytes:
                 "reject": danger_color
             }
             verdict_icons = {
-                "shortlist": "✅",
-                "review": "🔄",
-                "reject": "❌"
+                "shortlist": "SHORTLISTED",
+                "review": "UNDER REVIEW",
+                "reject": "REJECTED"
             }
             
             c.setFont("Helvetica-Bold", 12)
             c.setFillColor(black)
-            c.drawString(50, y, "📋 Final Verdict:")
+            c.drawString(50, y, "Final Verdict:")
             
             c.setFont("Helvetica-Bold", 14)
             c.setFillColor(verdict_colors.get(verdict, black))
-            verdict_text = f"{verdict_icons.get(verdict, '•')} {verdict.upper()}"
+            verdict_text = f"{verdict_icons.get(verdict, verdict.upper())}"
             c.drawString(200, y, verdict_text)
             c.setFillColor(black)
             
@@ -262,7 +262,7 @@ def generate_summary_pdf(candidate: Dict[str, Any]) -> bytes:
         try:
             c.setFont("Helvetica-Bold", 12)
             c.setFillColor(header_color)
-            c.drawString(50, y, "🎯 Fitment Analysis")
+            c.drawString(50, y, "Fitment Analysis")
             c.setFillColor(black)
             y -= spacing
             
@@ -288,7 +288,7 @@ def generate_summary_pdf(candidate: Dict[str, Any]) -> bytes:
         try:
             c.setFont("Helvetica-Bold", 12)
             c.setFillColor(header_color)
-            c.drawString(50, y, "📝 Candidate Summary")
+            c.drawString(50, y, "Candidate Summary")
             c.setFillColor(black)
             y -= spacing
             
@@ -321,7 +321,7 @@ def generate_summary_pdf(candidate: Dict[str, Any]) -> bytes:
             if highlights:
                 c.setFont("Helvetica-Bold", 12)
                 c.setFillColor(success_color)
-                c.drawString(50, y, "🌟 Key Highlights")
+                c.drawString(50, y, "Key Highlights")
                 c.setFillColor(black)
                 y -= spacing
                 
@@ -347,7 +347,7 @@ def generate_summary_pdf(candidate: Dict[str, Any]) -> bytes:
             if red_flags:
                 c.setFont("Helvetica-Bold", 12)
                 c.setFillColor(danger_color)
-                c.drawString(50, y, "🚩 Red Flags")
+                c.drawString(50, y, "Red Flags")
                 c.setFillColor(black)
                 y -= spacing
                 
@@ -369,7 +369,7 @@ def generate_summary_pdf(candidate: Dict[str, Any]) -> bytes:
             if missing_gaps:
                 c.setFont("Helvetica-Bold", 12)
                 c.setFillColor(warning_color)
-                c.drawString(50, y, "❓ Missing Information")
+                c.drawString(50, y, "Missing Information")
                 c.setFillColor(black)
                 y -= spacing
                 
@@ -392,7 +392,7 @@ def generate_summary_pdf(candidate: Dict[str, Any]) -> bytes:
                 if rejection_reasons:
                     c.setFont("Helvetica-Bold", 12)
                     c.setFillColor(danger_color)
-                    c.drawString(50, y, "❌ Rejection Reasons")
+                    c.drawString(50, y, "Rejection Reasons")
                     c.setFillColor(black)
                     y -= spacing
                     
@@ -414,7 +414,7 @@ def generate_summary_pdf(candidate: Dict[str, Any]) -> bytes:
             if recommendation and recommendation not in ["N/A", "n/a"]:
                 c.setFont("Helvetica-Bold", 12)
                 c.setFillColor(header_color)
-                c.drawString(50, y, "🎯 Recommendations")
+                c.drawString(50, y, "Recommendations")
                 c.setFillColor(black)
                 y -= spacing
                 
@@ -435,7 +435,7 @@ def generate_summary_pdf(candidate: Dict[str, Any]) -> bytes:
             if notes and notes not in ["N/A", "n/a"]:
                 c.setFont("Helvetica-Bold", 12)
                 c.setFillColor(header_color)
-                c.drawString(50, y, "📝 Recruiter Notes")
+                c.drawString(50, y, "Recruiter Notes")
                 c.setFillColor(black)
                 y -= spacing
                 
@@ -454,7 +454,7 @@ def generate_summary_pdf(candidate: Dict[str, Any]) -> bytes:
         try:
             c.setFont("Helvetica", 8)
             c.setFillColor(HexColor('#666666'))
-            c.drawString(50, 50, f"Generated by EazyAI Resume Screener • Page 1")
+            c.drawString(50, 50, "Generated by EazyAI Resume Screener • Page 1")
             c.drawString(width - 200, 50, "Confidential Document")
             c.setFillColor(black)
         except Exception as e:
