@@ -10,7 +10,7 @@ IMAP_SERVER = "imap.gmail.com"
 IMAP_PORT = 993
 
 # Azure credentials
-AZURE_CONNECTION_STRING = "DefaultEndpointsProtocol=https;AccountName=resumescreenerstorage;AccountKey=viOxwfuH/revazwvooYHEBfbVmLaPLdEzwIw6KVjK6exkopdQcLhHzP/WoLzXYIzR1kVEQilT/jP+ASt60C1gA==;EndpointSuffix=core.windows.net"
+AZURE_CONNECTION_STRING = "DefaultEndpointsProtocol=https;AccountName=resumescreenerst;AccountKey=H8sGhn9NpR5qoDrTJpdXZxGpBM3h67hChtd4B4v7vIy8QG3lv8cNIdUvnBoTDwyvN3YhtQH56Hbr+AStrMNVbA==;EndpointSuffix=core.windows.net"
 CONTAINER_NAME = "resumes"
 
 # Connect to Gmail
@@ -66,3 +66,4 @@ for e_id in email_ids:
     mail.store(e_id, "+FLAGS", "\\Seen")
 
 mail.logout()
+
