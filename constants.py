@@ -3,11 +3,11 @@ from typing import Dict, Any
 
 # Azure Configuration - Enhanced with better defaults
 AZURE_CONFIG = {
-    "openai_key": os.getenv("AZURE_OPENAI_KEY", "E8H5xVQpBp0bhrBW0ejunGDae8Xm17d6xnonrYXPhN1jf4G76OeMJQQJ99BHACfhMk5XJ3w3AAABACOGVpeS"),
-    "azure_endpoint": os.getenv("AZURE_OPENAI_ENDPOINT", "https://screener-resume.openai.azure.com/"),
+    "openai_key": os.getenv("AZURE_OPENAI_KEY", "5Es50uZ8tfbOJWUsyNN8Tv8JcpMUb2ZtEQNMYGo7fRsMvhQ02gm3JQQJ99BHACHYHv6XJ3w3AAABACOGFg92"),
+    "azure_endpoint": os.getenv("AZURE_OPENAI_ENDPOINT", "https://screenerresume.openai.azure.com/"),
     "api_version": "2024-04-01-preview",
     "connection_string": os.getenv("AZURE_STORAGE_CONNECTION_STRING", 
-                                 "DefaultEndpointsProtocol=https;AccountName=resumescreenerstorage;AccountKey=viOxwfuH/revazwvooYHEBfbVmLaPLdEzwIw6KVjK6exkopdQcLhHzP/WoLzXYIzR1kVEQilT/jP+ASt60C1gA==;EndpointSuffix=core.windows.net"),
+                                 "DefaultEndpointsProtocol=https;AccountName=resumescreenerst;AccountKey=H8sGhn9NpR5qoDrTJpdXZxGpBM3h67hChtd4B4v7vIy8QG3lv8cNIdUvnBoTDwyvN3YhtQH56Hbr+AStrMNVbA==;EndpointSuffix=core.windows.net"),
     "resumes_container": "resumes",
     "summaries_container": "summaries", 
     "csv_container": "csvdata"
