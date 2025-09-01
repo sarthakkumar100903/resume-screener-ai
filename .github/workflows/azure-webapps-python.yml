@@ -21,7 +21,7 @@
 name: Build and deploy Python app to Azure Web App
 
 env:
-  AZURE_WEBAPP_NAME: resume-screener-demo    # 👈 Your Azure Web App name
+  AZURE_WEBAPP_NAME: resume-screen-demo   # 👈 Your Azure Web App name
   PYTHON_VERSION: '3.10'                   # 👈 Your desired Python version
 
 on:
