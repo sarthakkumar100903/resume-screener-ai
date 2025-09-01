@@ -67,8 +67,9 @@ jobs:
         uses: azure/webapps-deploy@v3
         id: deploy-to-webapp
         with:
-          app-name: 'resume-screen-demo'
+          app-name: 'resume-screener-demo'
           slot-name: 'Production'
 
           
+
 
