@@ -22,16 +22,16 @@ name: Build and deploy Python app to Azure Web App
 
 env:
   AZURE_WEBAPP_NAME: resume-screener-rg   # 👈 Your Azure Web App name
-  PYTHON_VERSION: '3.10'                   # 👈 Your desired Python version
+  PYTHON_VERSION: '3.10'                  # 👈 Your desired Python version
 
 on:
   push:
-    branches: [ "main" ]                   # 👈 Runs when you push to main
-  workflow_dispatch:                       # 👈 Also enables manual run from GitHub
+    branches: [ "main" ]                  # 👈 Runs when you push to main
+  workflow_dispatch:                      # 👈 Also enables manual run from GitHub
 
 permissions:
   contents: read
-  id-token: write                          # 👈 Needed for federated login
+  id-token: write                         # 👈 Needed for federated login
 
 jobs:
   build-and-deploy:
@@ -56,13 +56,12 @@ jobs:
       - name: 🔐 Azure Login via Federated Identity
         uses: azure/login@v2
         with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          client-id: 18c47d74-6ca9-4281-a7d6-775bddb6692d
+          tenant-id: cf7f436c-765d-41e5-8a8c-fe24dc51a740
+          subscription-id: ed54eb0a-4ad1-4e0c-9a1f-de7a452c3999
 
       - name: 🚀 Deploy to Azure Web App
         uses: azure/webapps-deploy@v2
         with:
-          app-name: ${{ env.AZURE_WEBAPP_NAME }}
+          app-name: resume-screener-rg
           package: .
-
