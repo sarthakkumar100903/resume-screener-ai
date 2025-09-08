@@ -58,9 +58,9 @@ jobs:
       - name: Login to Azure
         uses: azure/login@v2
         with:
-          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_E089E65C242D4653B28DF6932BBDA9AE }}
-          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_6FBD37AF759B46CEAA3B0179D0136F1B }}
-          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_22DF8899D34F4C50A4151804D31F5568 }}
+          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_2c37c1c2-7605-4cb3-b860-640fd2a33922 }}
+          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_cf7f436c-765d-41e5-8a8c-fe24dc51a740 }}
+          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_ed54eb0a-4ad1-4e0c-9a1f-de7a452c3999 }}
 
       - name: 'Deploy to Azure Web App'
         uses: azure/webapps-deploy@v3
@@ -68,4 +68,5 @@ jobs:
         with:
           app-name: 'EAZYAISCREENER'
           slot-name: 'Production'
+
           
