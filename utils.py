@@ -1,7 +1,10 @@
-# utils.py — Enhanced Resume Parsing, Embeddings, Contact Extraction, Azure Uploads
+# Enhanced utils.py — Multi-format Resume Parsing (PDF, DOCX, DOC), Embeddings, Contact Extraction, Azure Uploads
 
 import re
 import fitz  # PyMuPDF
+import docx
+import zipfile
+from docx import Document
 import numpy as np
 import tiktoken
 import functools
@@ -14,6 +17,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 from constants import AZURE_CONFIG, MODEL_CONFIG, PERFORMANCE_CONFIG
 from openai import AzureOpenAI
 import pandas as pd
+import io
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -28,46 +32,194 @@ client = AzureOpenAI(
 )
 
 # ==========================
-# 📄 Enhanced Resume Text Extractor
+# 📄 Enhanced Multi-format Resume Text Extractor
 # ==========================
 
-def parse_resume(file_bytes: bytes, max_pages: int = 10) -> str:
+def parse_resume(file_bytes: bytes, filename: str = "resume", max_pages: int = 10) -> str:
     """
-    Enhanced resume parser with error handling and optimization
+    Enhanced resume parser supporting PDF, DOCX, and DOC formats
     """
     try:
         start_time = time.time()
         
+        # Determine file type from filename or content
+        file_extension = filename.lower().split('.')[-1] if '.' in filename else 'pdf'
+        
+        if file_extension == 'pdf':
+            text = parse_pdf(file_bytes, max_pages)
+        elif file_extension in ['docx', 'doc']:
+            text = parse_word_document(file_bytes, file_extension)
+        else:
+            # Fallback: try to detect format by content
+            text = parse_with_format_detection(file_bytes, max_pages)
+        
+        # Clean up text
+        text = clean_resume_text(text)
+        
+        processing_time = time.time() - start_time
+        logger.debug(f"Parsed {file_extension.upper()} in {processing_time:.2f}s, {len(text)} chars")
+        
+        return text
+        
+    except Exception as e:
+        logger.error(f"Resume parsing failed for {filename}: {str(e)}")
+        return f"Error reading resume: {str(e)}"
+
+def parse_pdf(file_bytes: bytes, max_pages: int = 10) -> str:
+    """Parse PDF files using PyMuPDF"""
+    try:
         with fitz.open(stream=file_bytes, filetype="pdf") as doc:
             text_parts = []
             pages_processed = 0
             
             for page_num, page in enumerate(doc):
-                if pages_processed >= max_pages:  # Limit pages for performance
+                if pages_processed >= max_pages:
                     break
                     
                 try:
                     page_text = page.get_text()
-                    if page_text.strip():  # Only add non-empty pages
+                    if page_text.strip():
                         text_parts.append(page_text)
                         pages_processed += 1
                 except Exception as e:
-                    logger.warning(f"Error processing page {page_num}: {str(e)}")
+                    logger.warning(f"Error processing PDF page {page_num}: {str(e)}")
                     continue
             
-            full_text = "\n\n".join(text_parts)
-            
-            # Clean up text
-            full_text = clean_resume_text(full_text)
-            
-            processing_time = time.time() - start_time
-            logger.debug(f"Parsed {pages_processed} pages in {processing_time:.2f}s, {len(full_text)} chars")
-            
-            return full_text
-            
+            return "\n\n".join(text_parts)
     except Exception as e:
-        logger.error(f"Resume parsing failed: {str(e)}")
-        return f"Error reading resume: {str(e)}"
+        logger.error(f"PDF parsing error: {str(e)}")
+        raise
+
+def parse_word_document(file_bytes: bytes, file_extension: str) -> str:
+    """Parse DOCX and DOC files"""
+    try:
+        if file_extension == 'docx':
+            return parse_docx(file_bytes)
+        elif file_extension == 'doc':
+            return parse_doc_fallback(file_bytes)
+        else:
+            raise ValueError(f"Unsupported Word format: {file_extension}")
+    except Exception as e:
+        logger.error(f"Word document parsing error: {str(e)}")
+        raise
+
+def parse_docx(file_bytes: bytes) -> str:
+    """Parse DOCX files using python-docx"""
+    try:
+        # Create a BytesIO object from bytes
+        doc_io = io.BytesIO(file_bytes)
+        doc = Document(doc_io)
+        
+        text_parts = []
+        
+        # Extract text from paragraphs
+        for paragraph in doc.paragraphs:
+            if paragraph.text.strip():
+                text_parts.append(paragraph.text.strip())
+        
+        # Extract text from tables
+        for table in doc.tables:
+            for row in table.rows:
+                row_text = []
+                for cell in row.cells:
+                    cell_text = cell.text.strip()
+                    if cell_text:
+                        row_text.append(cell_text)
+                if row_text:
+                    text_parts.append(" | ".join(row_text))
+        
+        return "\n".join(text_parts)
+        
+    except Exception as e:
+        logger.error(f"DOCX parsing error: {str(e)}")
+        # Fallback: try to extract as ZIP
+        return extract_docx_as_zip(file_bytes)
+
+def extract_docx_as_zip(file_bytes: bytes) -> str:
+    """Fallback method to extract DOCX content as ZIP"""
+    try:
+        doc_io = io.BytesIO(file_bytes)
+        
+        with zipfile.ZipFile(doc_io, 'r') as zip_file:
+            # Try to read the main document content
+            try:
+                content = zip_file.read('word/document.xml')
+                # Basic XML content extraction (remove tags)
+                text = re.sub(r'<[^>]+>', ' ', content.decode('utf-8', errors='ignore'))
+                text = re.sub(r'\s+', ' ', text).strip()
+                return text
+            except KeyError:
+                # If document.xml is not found, try other files
+                text_parts = []
+                for filename in zip_file.namelist():
+                    if filename.startswith('word/') and filename.endswith('.xml'):
+                        try:
+                            content = zip_file.read(filename)
+                            clean_text = re.sub(r'<[^>]+>', ' ', content.decode('utf-8', errors='ignore'))
+                            clean_text = re.sub(r'\s+', ' ', clean_text).strip()
+                            if clean_text:
+                                text_parts.append(clean_text)
+                        except Exception:
+                            continue
+                return "\n".join(text_parts)
+    except Exception as e:
+        logger.error(f"DOCX ZIP extraction failed: {str(e)}")
+        return "Error extracting DOCX content"
+
+def parse_doc_fallback(file_bytes: bytes) -> str:
+    """
+    Fallback parser for DOC files (limited support)
+    Note: Full DOC parsing requires additional libraries like python-docx2txt or antiword
+    """
+    try:
+        # Basic text extraction attempt
+        text = file_bytes.decode('utf-8', errors='ignore')
+        
+        # Remove common binary artifacts
+        text = re.sub(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\xFF]', ' ', text)
+        text = re.sub(r'\s+', ' ', text).strip()
+        
+        # If the text is mostly gibberish, return a message
+        readable_chars = len(re.findall(r'[a-zA-Z\s]', text))
+        if readable_chars < len(text) * 0.3:  # Less than 30% readable characters
+            return "DOC format detected but content extraction is limited. Please convert to DOCX or PDF for better parsing."
+        
+        return text
+        
+    except Exception as e:
+        logger.error(f"DOC parsing error: {str(e)}")
+        return "Error parsing DOC file. Please convert to DOCX or PDF format."
+
+def parse_with_format_detection(file_bytes: bytes, max_pages: int = 10) -> str:
+    """Detect format and parse accordingly"""
+    try:
+        # Check for PDF signature
+        if file_bytes.startswith(b'%PDF'):
+            return parse_pdf(file_bytes, max_pages)
+        
+        # Check for DOCX signature (ZIP file with specific content)
+        elif file_bytes.startswith(b'PK\x03\x04'):
+            try:
+                # Try to parse as DOCX first
+                return parse_docx(file_bytes)
+            except:
+                # If DOCX parsing fails, might be another ZIP format
+                return "Unsupported ZIP-based document format"
+        
+        # Check for DOC signature
+        elif file_bytes.startswith(b'\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1'):
+            return parse_doc_fallback(file_bytes)
+        
+        else:
+            # Try as text file
+            try:
+                return file_bytes.decode('utf-8', errors='ignore')
+            except:
+                return "Unknown file format - could not extract text"
+                
+    except Exception as e:
+        logger.error(f"Format detection failed: {str(e)}")
+        return f"Error detecting file format: {str(e)}"
 
 def clean_resume_text(text: str) -> str:
     """Clean and normalize resume text"""
@@ -78,9 +230,13 @@ def clean_resume_text(text: str) -> str:
     text = re.sub(r'\n\s*\n\s*\n', '\n\n', text)  # Max 2 consecutive newlines
     text = re.sub(r'[ \t]+', ' ', text)  # Normalize spaces and tabs
     
-    # Remove common PDF artifacts
+    # Remove common document artifacts
     text = re.sub(r'[^\x20-\x7E\n]', ' ', text)  # Remove non-ASCII except newlines
     text = re.sub(r'(\w)\s+(\w)', r'\1 \2', text)  # Fix broken words
+    
+    # Clean up common Word/PDF artifacts
+    text = re.sub(r'\x0c', ' ', text)  # Form feed characters
+    text = re.sub(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]', ' ', text)  # Control characters
     
     # Normalize line endings
     text = text.replace('\r\n', '\n').replace('\r', '\n')
@@ -420,6 +576,18 @@ def validate_resume_content(text: str) -> Dict[str, Any]:
         "contact_info": contact
     }
 
+def get_file_format_from_name(filename: str) -> str:
+    """Extract file format from filename"""
+    if '.' in filename:
+        return filename.lower().split('.')[-1]
+    return 'unknown'
+
+def is_supported_resume_format(filename: str) -> bool:
+    """Check if file format is supported for resume parsing"""
+    supported_formats = ['pdf', 'docx', 'doc']
+    file_format = get_file_format_from_name(filename)
+    return file_format in supported_formats
+
 def format_processing_time(seconds: float) -> str:
     """Format processing time in human-readable format"""
     if seconds < 1:
@@ -437,125 +605,46 @@ def calculate_throughput(resume_count: int, total_time: float) -> float:
         return 0.0
     return (resume_count / total_time) * 3600
 
-def get_system_stats() -> Dict[str, Any]:
-    """Get system performance statistics"""
-    import psutil
-    
-    try:
-        return {
-            "cpu_percent": psutil.cpu_percent(interval=1),
-            "memory_percent": psutil.virtual_memory().percent,
-            "available_memory": psutil.virtual_memory().available / (1024**3),  # GB
-            "disk_usage": psutil.disk_usage('/').percent
-        }
-    except ImportError:
-        return {"error": "psutil not available"}
-
 # ==========================
-# 🧪 Testing Utilities
+# 📊 Enhanced File Format Statistics
 # ==========================
 
-def create_test_resume_data(count: int = 5) -> List[Dict[str, Any]]:
-    """Generate test resume data for development/testing"""
-    test_data = []
+def analyze_file_formats(file_list: List[Tuple[str, bytes]]) -> Dict[str, Any]:
+    """Analyze file formats in a list of files"""
+    format_stats = {}
+    total_size = 0
     
-    for i in range(count):
-        test_data.append({
-            "resume_file": f"test_resume_{i+1}.pdf",
-            "resume_text": f"""
-            John Doe {i+1}
-            Email: john.doe{i+1}@email.com
-            Phone: +1-555-{i+1:03d}-{i+1:04d}
-            
-            PROFESSIONAL EXPERIENCE
-            Software Developer at Tech Company
-            - Developed web applications using Python and React
-            - Collaborated with cross-functional teams
-            - Improved system performance by 20%
-            
-            EDUCATION
-            Bachelor of Science in Computer Science
-            University of Technology, 2020
-            
-            SKILLS
-            Python, JavaScript, React, SQL, AWS
-            """,
-            "contact": {
-                "name": f"John Doe {i+1}",
-                "email": f"john.doe{i+1}@email.com", 
-                "phone": f"+1-555-{i+1:03d}-{i+1:04d}"
-            },
-            "jd_similarity": 75.0 + (i * 5)  # Varying similarity scores
-        })
-    
-    return test_data
-
-# ==========================
-# 📊 Performance Monitoring
-# ==========================
-
-class PerformanceTracker:
-    """Track and analyze performance metrics"""
-    
-    def __init__(self):
-        self.metrics = []
-        self.start_time = None
-    
-    def start_tracking(self):
-        """Start performance tracking"""
-        self.start_time = time.time()
-        self.metrics = []
-    
-    def record_metric(self, operation: str, duration: float, **kwargs):
-        """Record a performance metric"""
-        self.metrics.append({
-            "operation": operation,
-            "duration": duration,
-            "timestamp": time.time(),
-            **kwargs
-        })
-    
-    def get_summary(self) -> Dict[str, Any]:
-        """Get performance summary"""
-        if not self.metrics:
-            return {"error": "No metrics recorded"}
+    for filename, file_bytes in file_list:
+        file_format = get_file_format_from_name(filename)
+        file_size = len(file_bytes)
         
-        total_time = time.time() - self.start_time if self.start_time else 0
-        durations = [m["duration"] for m in self.metrics]
+        if file_format not in format_stats:
+            format_stats[file_format] = {
+                'count': 0,
+                'total_size': 0,
+                'files': []
+            }
         
-        return {
-            "total_operations": len(self.metrics),
-            "total_time": total_time,
-            "average_duration": np.mean(durations),
-            "min_duration": np.min(durations),
-            "max_duration": np.max(durations),
-            "std_duration": np.std(durations),
-            "operations_per_second": len(self.metrics) / total_time if total_time > 0 else 0
-        }
+        format_stats[file_format]['count'] += 1
+        format_stats[file_format]['total_size'] += file_size
+        format_stats[file_format]['files'].append(filename)
+        total_size += file_size
     
-    def get_detailed_report(self) -> str:
-        """Get detailed performance report"""
-        summary = self.get_summary()
-        if "error" in summary:
-            return "No performance data available"
-        
-        report = f"""
-Performance Report
-==================
-Total Operations: {summary['total_operations']}
-Total Time: {format_processing_time(summary['total_time'])}
-Average Duration: {format_processing_time(summary['average_duration'])}
-Min/Max Duration: {format_processing_time(summary['min_duration'])} / {format_processing_time(summary['max_duration'])}
-Operations/Second: {summary['operations_per_second']:.2f}
-        """
-        
-        return report.strip()
-
-# Global performance tracker
-performance_tracker = PerformanceTracker()
+    # Calculate percentages
+    for format_info in format_stats.values():
+        format_info['size_percentage'] = (format_info['total_size'] / total_size) * 100 if total_size > 0 else 0
+    
+    return {
+        'format_breakdown': format_stats,
+        'total_files': len(file_list),
+        'total_size_bytes': total_size,
+        'total_size_mb': total_size / (1024 * 1024),
+        'supported_formats': [fmt for fmt in format_stats.keys() if fmt in ['pdf', 'docx', 'doc']],
+        'unsupported_formats': [fmt for fmt in format_stats.keys() if fmt not in ['pdf', 'docx', 'doc']]
+    }
 
 # ==========================
-# 🔍 Advanced Text Processing
+# 🔍 Advanced Text Processing for Multi-format Support
 # ==========================
 
 def extract_skills_from_text(text: str) -> List[str]:
@@ -612,16 +701,25 @@ def extract_education_level(text: str) -> str:
     return "Not Specified"
 
 # ==========================
-# 📈 Quality Scoring
+# 📈 Quality Scoring with Multi-format Considerations
 # ==========================
 
-def calculate_resume_quality_score(text: str, contact: Dict[str, str]) -> Dict[str, Any]:
-    """Calculate overall resume quality score"""
+def calculate_resume_quality_score(text: str, contact: Dict[str, str], file_format: str = "pdf") -> Dict[str, Any]:
+    """Calculate overall resume quality score with format-specific adjustments"""
     if not text:
-        return {"score": 0, "factors": ["Empty resume"]}
+        return {"score": 0, "factors": ["Empty resume"], "format": file_format}
     
     factors = []
     score = 0
+    
+    # Format-specific adjustments
+    format_bonus = {
+        'pdf': 0,    # Standard format
+        'docx': 0,   # Standard format  
+        'doc': -5    # Older format, slight penalty
+    }
+    
+    score += format_bonus.get(file_format, -10)  # Unknown formats get penalty
     
     # Length check (10 points)
     word_count = len(text.split())
@@ -688,24 +786,35 @@ def calculate_resume_quality_score(text: str, contact: Dict[str, str]) -> Dict[s
         factors.append("Limited technical skills mentioned")
     
     return {
-        "score": min(score, 100),
+        "score": min(max(score, 0), 100),  # Ensure 0-100 range
         "word_count": word_count,
         "skills_found": skills,
         "factors": factors,
-        "contact_completeness": contact_score / 20 * 100
+        "contact_completeness": contact_score / 20 * 100,
+        "file_format": file_format,
+        "format_quality": "Good" if file_format in ['pdf', 'docx'] else "Acceptable" if file_format == 'doc' else "Poor"
     }
 
 # ==========================
-# 🚨 Enhanced Fraud Detection
+# 🚨 Enhanced Fraud Detection with Multi-format Support
 # ==========================
 
-def detect_resume_anomalies(text: str, contact: Dict[str, str]) -> Dict[str, Any]:
-    """Detect potential resume fraud or anomalies"""
+def detect_resume_anomalies(text: str, contact: Dict[str, str], file_format: str = "unknown") -> Dict[str, Any]:
+    """Detect potential resume fraud or anomalies with format-specific checks"""
     anomalies = []
     risk_score = 0
     
     if not text:
-        return {"anomalies": ["Empty resume"], "risk_score": 100}
+        return {"anomalies": ["Empty resume"], "risk_score": 100, "format": file_format}
+    
+    # Format-specific risk assessment
+    if file_format == 'doc':
+        # DOC files have limited parsing, higher risk of incomplete analysis
+        risk_score += 5
+        anomalies.append("DOC format may have incomplete text extraction")
+    elif file_format not in ['pdf', 'docx', 'doc']:
+        risk_score += 15
+        anomalies.append("Unusual file format for resumes")
     
     # Check for template indicators
     template_indicators = [
@@ -753,14 +862,24 @@ def detect_resume_anomalies(text: str, contact: Dict[str, str]) -> Dict[str, Any
         anomalies.append("Contains duplicate content")
         risk_score += 15
     
+    # Format-specific anomaly detection
+    if file_format == 'pdf' and 'Error reading resume' in text:
+        anomalies.append("PDF parsing errors detected")
+        risk_score += 10
+    elif file_format in ['docx', 'doc'] and len(text) < 100:
+        anomalies.append("Word document appears to have minimal content")
+        risk_score += 10
+    
     return {
         "anomalies": anomalies,
         "risk_score": min(risk_score, 100),
-        "requires_manual_review": risk_score > 30
+        "requires_manual_review": risk_score > 30,
+        "file_format": file_format,
+        "format_specific_issues": [a for a in anomalies if 'format' in a.lower() or 'parsing' in a.lower()]
     }
 
 # ==========================
-# 📊 Export Utilities
+# 📊 Export Utilities with Format Information
 # ==========================
 
 def prepare_export_data(df: pd.DataFrame, include_sensitive: bool = False) -> pd.DataFrame:
@@ -782,14 +901,24 @@ def prepare_export_data(df: pd.DataFrame, include_sensitive: bool = False) -> pd
                 lambda x: "; ".join(x) if isinstance(x, list) else str(x)
             )
     
+    # Add file format information if available
+    if 'resume_file' in export_df.columns:
+        export_df['file_format'] = export_df['resume_file'].apply(get_file_format_from_name)
+    
     return export_df
 
 def generate_analysis_summary(results: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """Generate comprehensive analysis summary"""
+    """Generate comprehensive analysis summary with format breakdown"""
     if not results:
         return {"error": "No results to analyze"}
     
     df = pd.DataFrame(results)
+    
+    # File format analysis
+    format_breakdown = {}
+    if 'resume_file' in df.columns:
+        df['file_format'] = df['resume_file'].apply(get_file_format_from_name)
+        format_breakdown = df['file_format'].value_counts().to_dict()
     
     summary = {
         "total_candidates": len(df),
@@ -801,6 +930,7 @@ def generate_analysis_summary(results: List[Dict[str, Any]]) -> Dict[str, Any]:
             "poor": len(df[df["score"] < 40])
         },
         "verdict_distribution": df["verdict"].value_counts().to_dict(),
+        "format_breakdown": format_breakdown,
         "top_skills": extract_top_skills_from_results(results),
         "quality_metrics": {
             "fraud_detected": len(df[df["fraud_detected"] == True]),
