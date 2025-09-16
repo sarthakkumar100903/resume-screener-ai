@@ -31,6 +31,9 @@ from backend import get_resume_analysis_async, extract_role_from_jd
 from pdf_utils import generate_summary_pdf
 from email_generator import send_email, check_missing_info, send_missing_info_email
 
+# Import Gmail service
+from gmail_to_azure import auto_sync_gmail_on_startup, get_gmail_service
+
 # Azure Blob Storage
 from azure.storage.blob import BlobServiceClient
 
@@ -178,6 +181,30 @@ st.markdown(
         color: #1e293b;
     }
 
+    .gmail-sync-status {
+        background: rgba(88, 101, 242, 0.1);
+        border: 1px solid rgba(88, 101, 242, 0.2);
+        border-radius: 12px;
+        padding: 1rem;
+        margin: 1rem 0;
+        color: #e2e8f0;
+    }
+
+    [data-theme="light"] .gmail-sync-status {
+        color: #1e293b;
+        background: rgba(88, 101, 242, 0.1);
+    }
+
+    .sync-active {
+        background: rgba(16, 185, 129, 0.1) !important;
+        border-color: rgba(16, 185, 129, 0.3) !important;
+    }
+
+    .sync-error {
+        background: rgba(239, 68, 68, 0.1) !important;
+        border-color: rgba(239, 68, 68, 0.3) !important;
+    }
+
     .candidate-name {
         color: #e2e8f0;
         font-weight: 600;
@@ -234,16 +261,15 @@ def initialize_session_state():
     # Initialize candidate notes and verdicts tracking
     if "candidate_updates" not in st.session_state:
         st.session_state["candidate_updates"] = {}
+    # Gmail sync initialization
+    if "gmail_service_initialized" not in st.session_state:
+        st.session_state["gmail_service_initialized"] = False
+    if "gmail_sync_status" not in st.session_state:
+        st.session_state["gmail_sync_status"] = {}
 
 initialize_session_state()
 
-# Page configuration
-st.set_page_config(
-    layout="wide", 
-    page_title="EazyAI Resume Screener",
-    page_icon="🚀",
-    initial_sidebar_state="expanded"
-)
+
 
 # Initialize BlobServiceClient
 @st.cache_resource
@@ -253,24 +279,128 @@ def get_blob_service_client():
 blob_service_client = get_blob_service_client()
 resumes_container_client = blob_service_client.get_container_client(AZURE_CONFIG["resumes_container"])
 
-def download_all_pdf_blobs():
-    """Download all PDF files from Azure Blob Storage"""
+# Initialize Gmail service on app startup
+@st.cache_resource
+def initialize_gmail_service():
+    """Initialize Gmail service once when app starts"""
+    try:
+        service = auto_sync_gmail_on_startup(AZURE_CONFIG["connection_string"])
+        logger.info("Gmail service initialized and background sync started")
+        return service
+    except Exception as e:
+        logger.error(f"Failed to initialize Gmail service: {str(e)}")
+        return None
+
+# Start Gmail service when app loads
+gmail_service = initialize_gmail_service()
+if gmail_service and not st.session_state["gmail_service_initialized"]:
+    st.session_state["gmail_service_initialized"] = True
+
+def download_all_supported_resume_blobs():
+    """Download all supported resume files (PDF, DOCX, DOC) from Azure Blob Storage"""
     try:
         blobs = resumes_container_client.list_blobs()
-        pdf_files = []
+        resume_files = []
+        supported_extensions = ['.pdf', '.docx', '.doc']
+        
         for blob in blobs:
-            if blob.name.lower().endswith(".pdf"):
-                downloader = resumes_container_client.download_blob(blob.name)
-                pdf_bytes = downloader.readall()
-                pdf_files.append((blob.name, pdf_bytes))
-        return pdf_files
+            if any(blob.name.lower().endswith(ext) for ext in supported_extensions):
+                try:
+                    downloader = resumes_container_client.download_blob(blob.name)
+                    file_bytes = downloader.readall()
+                    resume_files.append((blob.name, file_bytes))
+                except Exception as e:
+                    logger.error(f"Error downloading {blob.name}: {str(e)}")
+                    continue
+        
+        logger.info(f"Downloaded {len(resume_files)} supported resume files")
+        return resume_files
     except Exception as e:
         st.error(f"Error downloading from blob storage: {str(e)}")
         return []
 
+def render_gmail_sync_status():
+    """Render Gmail sync status in the main area"""
+    if gmail_service:
+        status = gmail_service.get_status()
+        st.session_state["gmail_sync_status"] = status
+        
+        # Determine status class
+        status_class = "gmail-sync-status"
+        if status.get("is_active", False):
+            status_class += " sync-active"
+        elif status.get("errors", []):
+            status_class += " sync-error"
+        
+        # Render status box
+        status_icon = "🔄" if status.get("is_active") else "✅" if status.get("last_sync") else "⏳"
+        active_text = " (Active)" if status.get("is_active") else ""
+        
+        st.markdown(f"""
+        <div class="{status_class}">
+            <h4>{status_icon} Gmail Auto-Sync Status{active_text}</h4>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-top: 1rem;">
+                <div>
+                    <strong>Last Sync:</strong><br>
+                    {status.get('last_sync', 'Never')}
+                </div>
+                <div>
+                    <strong>Emails Processed:</strong><br>
+                    {status.get('emails_processed', 0)}
+                </div>
+                <div>
+                    <strong>Resumes Uploaded:</strong><br>
+                    {status.get('files_uploaded', 0)}
+                </div>
+                <div>
+                    <strong>Status:</strong><br>
+                    {'🔄 Processing...' if status.get('is_active') else '✅ Ready'}
+                </div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # Show errors if any
+        if status.get("errors"):
+            with st.expander("⚠️ Sync Errors", expanded=False):
+                for error in status["errors"][-5:]:  # Show last 5 errors
+                    st.error(error)
+        
+        return status
+    else:
+        st.markdown("""
+        <div class="gmail-sync-status sync-error">
+            <h4>❌ Gmail Auto-Sync Unavailable</h4>
+            <p>Gmail service could not be initialized. Please check your configuration.</p>
+        </div>
+        """, unsafe_allow_html=True)
+        return {}
+
 # Enhanced Header
 st.markdown('<h1 class="main-title">EazyAI</h1>', unsafe_allow_html=True)
 st.markdown('<p class="subtitle">Intelligent Resume Screening Platform</p>', unsafe_allow_html=True)
+
+# Gmail Sync Status (always visible at the top)
+col1, col2 = st.columns([3, 1])
+with col1:
+    gmail_status = render_gmail_sync_status()
+with col2:
+    st.markdown("### 🔄 Manual Sync")
+    if gmail_service:
+        if st.button("📧 Sync Gmail Now", type="secondary", use_container_width=True):
+            if not gmail_status.get("is_active", False):
+                with st.spinner("Syncing Gmail..."):
+                    result = gmail_service.sync_now()
+                    if "error" in result:
+                        st.error(result["error"])
+                    else:
+                        st.success(f"Sync completed! {result.get('files_uploaded', 0)} files uploaded")
+                        st.rerun()
+            else:
+                st.warning("Sync already in progress")
+    else:
+        st.error("Gmail service unavailable")
+
 st.markdown("---")
 
 # Sidebar Configuration
@@ -309,17 +439,35 @@ with st.sidebar:
 
     st.markdown('<div class="sidebar-section"><h3>📂 Resume Source</h3></div>', unsafe_allow_html=True)
     
-    load_from_blob = st.checkbox("☁️ Load from Azure Blob Storage", value=False)
+    load_from_blob = st.checkbox("☁️ Load from Azure Blob Storage", value=True, help="Automatically loads resumes from Gmail sync")
 
     if not load_from_blob:
         uploaded_files = st.file_uploader(
             "📤 Upload Resume Files", 
-            type=["pdf"], 
+            type=["pdf", "docx", "doc"], 
             accept_multiple_files=True,
-            help="Select multiple PDF resume files"
+            help="Select multiple resume files (PDF, DOCX, DOC formats supported)"
         )
     else:
         uploaded_files = None
+        st.info("📧 Resumes will be loaded from Azure Blob Storage (including Gmail sync)")
+
+    # Gmail sync controls in sidebar
+    st.markdown('<div class="sidebar-section"><h3>📧 Gmail Integration</h3></div>', unsafe_allow_html=True)
+    
+    if gmail_service:
+        sync_status = gmail_service.get_status()
+        
+        st.markdown(f"""
+        **Status:** {'🔄 Active' if sync_status.get('is_active') else '✅ Ready'}  
+        **Last Sync:** {sync_status.get('last_sync', 'Never')}  
+        **Files Uploaded:** {sync_status.get('files_uploaded', 0)}
+        """)
+        
+        if sync_status.get("errors"):
+            st.warning(f"⚠️ {len(sync_status['errors'])} sync errors")
+    else:
+        st.error("❌ Gmail service unavailable")
 
     st.markdown("---")
     analyze = st.button("🚀 Start Analysis", type="primary", use_container_width=True)
@@ -338,13 +486,20 @@ if jd and analyze and not st.session_state["analysis_done"]:
     # Load resumes
     if load_from_blob:
         status_text.info("📥 Loading resumes from Azure Blob Storage...")
-        blob_files = download_all_pdf_blobs()
+        blob_files = download_all_supported_resume_blobs()  # Now supports PDF, DOCX, DOC
         total = len(blob_files)
         if total == 0:
-            st.error("❌ No PDF resumes found in Azure Blob storage container.")
+            st.error("❌ No resume files found in Azure Blob storage container.")
+            st.info("💡 **Tip:** Send resumes (PDF, DOCX, DOC) to **demoprojectid3@gmail.com** and they will be automatically uploaded!")
             st.stop()
         else:
-            st.info(f"📊 Found {total} resumes in blob storage")
+            file_types = {}
+            for file_name, _ in blob_files:
+                ext = file_name.lower().split('.')[-1]
+                file_types[ext] = file_types.get(ext, 0) + 1
+            
+            types_text = ", ".join([f"{count} {ext.upper()}" for ext, count in file_types.items()])
+            st.info(f"📊 Found {total} resumes in blob storage ({types_text})")
     else:
         blob_files = None
         total = len(uploaded_files) if uploaded_files else 0
@@ -908,6 +1063,24 @@ EazyAI Recruitment Team"""
             
             st.markdown("---")
         
+        # Gmail sync analytics
+        if gmail_service:
+            sync_status = gmail_service.get_status()
+            st.markdown("### 📧 Gmail Sync Analytics")
+            
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                st.metric("📧 Emails Processed", sync_status.get('emails_processed', 0))
+            with col2:
+                st.metric("📄 Files Uploaded", sync_status.get('files_uploaded', 0))
+            with col3:
+                st.metric("❌ Sync Errors", len(sync_status.get('errors', [])))
+            with col4:
+                last_sync = sync_status.get('last_sync', 'Never')
+                st.metric("🕐 Last Sync", last_sync.split()[1] if last_sync != 'Never' and len(last_sync.split()) > 1 else last_sync)
+            
+            st.markdown("---")
+        
         # Summary statistics
         col1, col2 = st.columns(2)
         
@@ -1069,8 +1242,15 @@ elif not st.session_state["analysis_done"]:
     <div style="text-align: center; padding: 3rem 2rem; background: rgba(30, 42, 58, 0.6); border-radius: 16px; margin: 2rem 0;">
         <h2>🚀 Welcome to EazyAI Resume Screener</h2>
         <p style="font-size: 1.2rem; color: #94a3b8; margin-bottom: 2rem;">
-            Streamline your hiring process with AI-powered resume analysis
+            Streamline your hiring process with AI-powered resume analysis and automated Gmail integration
         </p>
+        <div style="background: rgba(0, 212, 255, 0.1); padding: 1.5rem; border-radius: 12px; margin: 2rem 0; border: 1px solid rgba(0, 212, 255, 0.2);">
+            <h3>📧 Email Integration Active</h3>
+            <p style="margin-bottom: 1rem;">Send resumes directly to: <strong>demoprojectid3@gmail.com</strong></p>
+            <p style="color: #00d4ff; font-size: 0.9rem;">
+                Supported formats: PDF, DOCX, DOC • Auto-sync every time you open the app
+            </p>
+        </div>
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 2rem; margin-top: 2rem;">
             <div style="background: rgba(0, 212, 255, 0.1); padding: 1.5rem; border-radius: 12px; border: 1px solid rgba(0, 212, 255, 0.2);">
                 <h4>📋 Step 1</h4>
@@ -1082,7 +1262,7 @@ elif not st.session_state["analysis_done"]:
             </div>
             <div style="background: rgba(16, 185, 129, 0.1); padding: 1.5rem; border-radius: 12px; border: 1px solid rgba(16, 185, 129, 0.2);">
                 <h4>📤 Step 3</h4>
-                <p>Upload resumes or load from Azure Blob</p>
+                <p>Upload resumes or use Gmail auto-sync</p>
             </div>
             <div style="background: rgba(255, 107, 107, 0.1); padding: 1.5rem; border-radius: 12px; border: 1px solid rgba(255, 107, 107, 0.2);">
                 <h4>🚀 Step 4</h4>
@@ -1108,11 +1288,11 @@ elif not st.session_state["analysis_done"]:
     with col2:
         st.markdown("""
         ### ⚡ Advanced Features  
+        - **Gmail auto-sync** for resume collection
+        - **Multi-format support** (PDF, DOCX, DOC)
         - **Bulk email automation** with custom templates
         - **PDF summary generation** for candidates
-        - **Azure Blob integration** for storage
         - **Real-time progress tracking** and performance metrics
-        - **Async processing** for faster analysis
         """)
     
     with col3:
@@ -1122,18 +1302,19 @@ elif not st.session_state["analysis_done"]:
         - **Customizable scoring thresholds** and criteria
         - **Interactive candidate management** with status updates
         - **Advanced filtering** and export capabilities
-        - **Performance monitoring** and optimization
+        - **Gmail sync monitoring** and error tracking
         """)
     
     # Performance expectations
     st.markdown("---")
     st.info("""
     🚀 **Performance Expectations:**
+    - **Gmail Auto-Sync**: Automatically processes new resumes when app starts
     - **~17 resumes**: Processed in 45-90 seconds (avg 3-5 seconds per resume)
-    - **Concurrent processing**: Multiple resumes analyzed simultaneously
-    - **Real-time progress**: Live updates during analysis
-    - **Performance logging**: Detailed metrics for optimization
+    - **Multi-format support**: PDF, DOCX, and DOC files supported
+    - **Real-time progress**: Live updates during analysis and sync
     """)
     
     st.markdown("---")
+    st.success("📧 **Gmail Integration**: Send resumes to **demoprojectid3@gmail.com** - they'll be automatically processed when you run analysis!")
     st.info("👈 **Get Started:** Fill in the job description and configuration options in the sidebar, then click 'Start Analysis' to begin!")
