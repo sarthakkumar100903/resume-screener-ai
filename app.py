@@ -1077,7 +1077,9 @@ EazyAI Recruitment Team"""
                 st.metric("❌ Sync Errors", len(sync_status.get('errors', [])))
             with col4:
                 last_sync = sync_status.get('last_sync', 'Never')
-                st.metric("🕐 Last Sync", last_sync.split()[1] if last_sync != 'Never' and len(last_sync.split()) > 1 else last_sync)
+                last_sync = sync_status.get('last_sync', 'Never')
+                last_sync_display = last_sync.split()[1] if last_sync and last_sync != 'Never' and ' ' in last_sync else last_sync
+                st.metric("🕐 Last Sync", last_sync_display)
             
             st.markdown("---")
         

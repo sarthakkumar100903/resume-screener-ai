@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 # Gmail credentials
 EMAIL = "demoprojectid3@gmail.com"
-PASSWORD = "hiik zyvf hopd umym"  # Your App Password
+PASSWORD = "hiik zyvf hopd umym"
 IMAP_SERVER = "imap.gmail.com"
 IMAP_PORT = 993
 
