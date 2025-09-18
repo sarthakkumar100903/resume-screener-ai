@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 # Gmail credentials
 EMAIL = "demoprojectid3@gmail.com"
-PASSWORD = "qthzxwpsqhlslcxj"  # Your App Password
+PASSWORD = "hiik zyvf hopd umym"  # Your App Password
 IMAP_SERVER = "imap.gmail.com"
 IMAP_PORT = 993
 
@@ -217,3 +217,4 @@ def auto_sync_gmail_on_startup(azure_connection_string: str) -> GmailToAzureServ
     service = initialize_gmail_service(azure_connection_string)
     service.start_background_sync()
     return service
+
