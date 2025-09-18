@@ -1,3 +1,7 @@
+startup command 
+streamlit run app.py --server.port=8000 --server.address=0.0.0.0
+
+
 # ☁️ Azure Deployment Guide
 
 **Simple step-by-step guide to deploy on Microsoft Azure**
